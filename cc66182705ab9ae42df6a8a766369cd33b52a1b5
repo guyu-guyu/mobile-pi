@@ -1,0 +1,16 @@
+src/main/java/com/ai/assistance/operit/terminal/LocalTerminalRuntimeConfig.kt
+  h_d9088715075e51 1-34
+src/main/java/com/ai/assistance/operit/terminal/TerminalManager.kt
+  h_d9088715075e51 48-49,115-126,129-132,793-798,1154,1156,1255,1261,1268,1274,1314-1316
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "cc66182705ab9ae42df6a8a766369cd33b52a1b5",
+  "prompts": {},
+  "humans": {
+    "h_d9088715075e51": {
+      "author": "leijieliu <leijieliu@tencent.com>"
+    }
+  }
+}
