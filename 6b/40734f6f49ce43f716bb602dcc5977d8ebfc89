@@ -1,0 +1,122 @@
+.gitattributes
+  h_d9088715075e51 1-20
+.gitignore
+  h_d9088715075e51 1-22
+.gitmodules
+  h_d9088715075e51 1-4
+CONTEXT.md
+  h_d9088715075e51 1-57
+README.md
+  h_d9088715075e51 1-59
+app/build.gradle.kts
+  h_d9088715075e51 1-77
+app/proguard-rules.pro
+  h_d9088715075e51 1
+app/src/main/AndroidManifest.xml
+  h_d9088715075e51 1-33
+app/src/main/java/dev/mobilepi/MainActivity.kt
+  h_d9088715075e51 1-49
+app/src/main/java/dev/mobilepi/ui/LinuxTerminalScreen.kt
+  h_d9088715075e51 1-198
+app/src/main/java/dev/mobilepi/ui/MobilePiScreen.kt
+  h_d9088715075e51 1-554
+app/src/main/java/dev/mobilepi/ui/MobilePiViewModel.kt
+  h_d9088715075e51 1-194
+app/src/main/java/dev/mobilepi/ui/theme/Theme.kt
+  h_d9088715075e51 1-48
+app/src/main/res/drawable/ic_app_icon.xml
+  h_d9088715075e51 1-23
+app/src/main/res/values/styles.xml
+  h_d9088715075e51 1-10
+app/src/main/res/xml/backup_rules.xml
+  h_d9088715075e51 1-4
+app/src/main/res/xml/data_extraction_rules.xml
+  h_d9088715075e51 1-9
+build.gradle.kts
+  h_d9088715075e51 1-8
+docs/PHASE_0.1_PROGRESS.md
+  h_d9088715075e51 1-68
+docs/ROADMAP.md
+  h_d9088715075e51 1-359
+docs/TECHNICAL_DESIGN.md
+  h_d9088715075e51 1-643
+docs/adr/0001-reuse-operit-terminal-core.md
+  h_d9088715075e51 1-19
+docs/adr/0002-use-non-pty-pi-rpc.md
+  h_d9088715075e51 1-13
+gradle.properties
+  h_d9088715075e51 1-7
+gradle/libs.versions.toml
+  h_d9088715075e51 1-44
+gradle/wrapper/gradle-wrapper.properties
+  h_d9088715075e51 1-8
+gradlew
+  h_d9088715075e51 1-251
+gradlew.bat
+  h_d9088715075e51 1-94
+runtime/UPSTREAM.md
+  h_d9088715075e51 1-19
+runtime/pi/build.gradle.kts
+  h_d9088715075e51 1-39
+runtime/pi/src/main/AndroidManifest.xml
+  h_d9088715075e51 1-2
+runtime/pi/src/main/java/dev/mobilepi/runtime/agent/AgentEventReducer.kt
+  h_d9088715075e51 1-99
+runtime/pi/src/main/java/dev/mobilepi/runtime/agent/AgentModels.kt
+  h_d9088715075e51 1-40
+runtime/pi/src/main/java/dev/mobilepi/runtime/agent/AgentStateMachine.kt
+  h_d9088715075e51 1-83
+runtime/pi/src/main/java/dev/mobilepi/runtime/agent/PiAgentController.kt
+  h_d9088715075e51 1-266
+runtime/pi/src/main/java/dev/mobilepi/runtime/model/RuntimeModels.kt
+  h_d9088715075e51 1-68
+runtime/pi/src/main/java/dev/mobilepi/runtime/process/PiProcessSpecFactory.kt
+  h_d9088715075e51 1-60
+runtime/pi/src/main/java/dev/mobilepi/runtime/process/RawProcess.kt
+  h_d9088715075e51 1-29
+runtime/pi/src/main/java/dev/mobilepi/runtime/process/RuntimePaths.kt
+  h_d9088715075e51 1-62
+runtime/pi/src/main/java/dev/mobilepi/runtime/process/TerminalCoreRawProcessLauncher.kt
+  h_d9088715075e51 1-146
+runtime/pi/src/main/java/dev/mobilepi/runtime/rpc/PiRpcClient.kt
+  h_d9088715075e51 1-245
+runtime/pi/src/main/java/dev/mobilepi/runtime/rpc/PiRpcProtocol.kt
+  h_d9088715075e51 1-93
+runtime/pi/src/main/java/dev/mobilepi/runtime/rpc/StrictJsonlDecoder.kt
+  h_d9088715075e51 1-134
+runtime/pi/src/main/java/dev/mobilepi/runtime/setup/RuntimeSetup.kt
+  h_d9088715075e51 1-16
+runtime/pi/src/main/java/dev/mobilepi/runtime/setup/TerminalCoreRuntimeSetup.kt
+  h_d9088715075e51 1-259
+runtime/pi/src/test/java/dev/mobilepi/runtime/agent/AgentEventReducerTest.kt
+  h_d9088715075e51 1-41
+runtime/pi/src/test/java/dev/mobilepi/runtime/agent/AgentStateMachineTest.kt
+  h_d9088715075e51 1-35
+runtime/pi/src/test/java/dev/mobilepi/runtime/model/HealthCheckResultTest.kt
+  h_d9088715075e51 1-29
+runtime/pi/src/test/java/dev/mobilepi/runtime/process/PiProcessSpecFactoryTest.kt
+  h_d9088715075e51 1-46
+runtime/pi/src/test/java/dev/mobilepi/runtime/rpc/PiRpcClientTest.kt
+  h_d9088715075e51 1-114
+runtime/pi/src/test/java/dev/mobilepi/runtime/rpc/PiRpcProtocolTest.kt
+  h_d9088715075e51 1-52
+runtime/pi/src/test/java/dev/mobilepi/runtime/rpc/StrictJsonlDecoderTest.kt
+  h_d9088715075e51 1-106
+runtime/pi/src/test/java/dev/mobilepi/runtime/setup/TerminalCoreRuntimeSetupTest.kt
+  h_d9088715075e51 1-24
+runtime/terminal-core
+  h_d9088715075e51 1
+settings.gradle.kts
+  h_d9088715075e51 1-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "6b40734f6f49ce43f716bb602dcc5977d8ebfc89",
+  "prompts": {},
+  "humans": {
+    "h_d9088715075e51": {
+      "author": "leijieliu <leijieliu@tencent.com>"
+    }
+  }
+}
