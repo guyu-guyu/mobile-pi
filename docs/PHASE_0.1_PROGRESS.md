@@ -45,7 +45,7 @@
 - API key：仅保留在 ViewModel 内存状态，不写入 manifest、runtime 或日志。
 - Android lint：0 errors；22 warnings，均已分类为固定版本提示、目标 ABI 限定、Debug-only 条件或下述 TerminalCore fork 待办。
 - UI：Start、Stop、Send、Abort 和 Verify file tool 已按 runtime/Agent 状态启用；流式消息、工具状态和 proof 结果可见。
-- Debug UI：runtime READY 后可进入交互式 Ubuntu PTY 终端；支持 ANSI、输入、Ctrl+C、虚拟键盘和 TerminalCore 多会话；默认进入 Agent 的 `/workspace`，并共享 `/mobile-pi/pi/config`，可在终端直接修改 App Agent 使用的 Pi 全局配置。
+- Debug UI：runtime READY 后可进入交互式 Ubuntu PTY 终端；支持 ANSI、输入、Ctrl+C、虚拟键盘和 TerminalCore 多会话；固定使用与 Agent 相同的 PRoot 模式并进入共享 `/workspace`，同时共享 `/mobile-pi/pi/config`；必需挂载失败时终端会报错退出，不会进入 rootfs 内的另一个目录。
 - RPC：严格使用 LF JSONL，stdout 非协议内容立即失败；stderr 单独脱敏后进入 diagnostics；官方完成事件按 `agent_end` 解析。
 - 当前 ADB：API 28、x86_64。TerminalCore ARM64 PTY 经 native bridge 启动后发生 `EIO`，未进入 rootfs 安装；该设备不属于 0.1.0 目标验收架构。
 

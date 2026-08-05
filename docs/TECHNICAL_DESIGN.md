@@ -204,7 +204,37 @@ npm install -g @earendil-works/pi-coding-agent@0.81.1
 
 第一阶段接受联网安装慢、不能断点续传等限制。生产版本再评估预构建 Node/Pi runtime bundle，以换取确定性和离线能力。
 
-### 6.3 安装状态机
+### 6.3 目录布局与挂载契约
+
+Android `Context.filesDir` 是 Mobile Pi 运行数据的宿主根目录。主用户中通常为 `/data/user/0/dev.mobilepi/files`，`/data/data/dev.mobilepi/files` 是等价入口；非主用户的数字部分随 Android user ID 变化，代码必须始终从 `Context.filesDir` 获取，不能硬编码绝对路径。
+
+当前 PoC 的宿主目录与 guest 视图如下：
+
+| 用途 | Android 宿主路径（相对 `filesDir`） | PRoot guest 路径 | 生命周期 |
+|---|---|---|---|
+| Ubuntu rootfs | `usr/var/lib/proot-distro/installed-rootfs/ubuntu` | `/` | 运行环境安装，可升级或重装 |
+| Pi 可执行文件 | `usr/var/lib/proot-distro/installed-rootfs/ubuntu/usr/bin/pi` | `/usr/bin/pi` | 随运行环境版本管理 |
+| 当前工作区 | `workspaces/poc/files` | `/workspace` | 用户工作数据，重装 runtime 时保留 |
+| Pi 共享目录 | `pi` | `/mobile-pi/pi` | 应用级 Pi 数据，所有 Agent 共享 |
+| Pi 全局配置 | `pi/config` | `/mobile-pi/pi/config` | 用户级设置与资源配置，所有会话共享 |
+| 临时目录 | `tmp` | `/tmp` | 可清理的运行时临时数据 |
+
+PRoot 将 rootfs 作为 guest `/`，再把宿主工作区和 Pi 共享目录覆盖到固定 guest 路径。因此终端执行 `cd / && ls` 看到的是组合后的 Ubuntu 文件系统视图，不是 `filesDir` 的直接列表；其中 `/workspace` 和 `/mobile-pi` 位于 guest 根目录下。
+
+rootfs 内会创建实体目录 `/workspace` 和 `/mobile-pi/pi` 作为挂载目标。它们不拥有工作数据，也不是历史遗留目录：挂载生效时，访问分别转发到 `filesDir/workspaces/poc/files` 和 `filesDir/pi`；底层实体目录被覆盖。不得把这些挂载目标纳入缓存清理或迁移删除清单，必需挂载失败时 terminal 和 Agent 必须启动失败，不能继续使用未挂载的底层目录。
+
+诊断 terminal 与非 PTY Pi Agent 必须使用相同的工作区源目录、guest 目标和 Pi 全局配置源目录。可以通过以下命令在 terminal 中核对内容，但运行逻辑不能依赖 `/data/user/0` 这一特定 user ID：
+
+```bash
+ls -la /workspace
+ls -la /data/data/dev.mobilepi/files/workspaces/poc/files
+ls -la /mobile-pi/pi/config
+ls -la /data/data/dev.mobilepi/files/pi/config
+```
+
+后续多工作区版本继续保留固定 guest `/workspace`，但每个 Agent 的独立 PRoot 进程把它映射到各自的 `workspaces/<workspace-id>/files`；`/mobile-pi/pi` 仍指向同一个应用级宿主目录。多会话细节见 7.3 节。
+
+### 6.4 安装状态机
 
 | 状态 | 含义 | 允许操作 |
 |---|---|---|
@@ -220,7 +250,7 @@ npm install -g @earendil-works/pi-coding-agent@0.81.1
 
 安装状态必须持久化；进程被 Android 杀死后，下一次启动从健康检查恢复，而不是相信中断前状态。
 
-### 6.4 版本 manifest
+### 6.5 版本 manifest
 
 建议存储以下字段：
 
@@ -239,7 +269,7 @@ npm install -g @earendil-works/pi-coding-agent@0.81.1
 
 manifest 只描述期望和最近验证结果，不能替代实际健康检查。
 
-### 6.5 健康检查
+### 6.6 健康检查
 
 按从低到高顺序执行：
 
@@ -251,7 +281,7 @@ manifest 只描述期望和最近验证结果，不能替代实际健康检查�
 
 前四项属于常规快速检查；第五项在安装完成、升级后和诊断页中执行。
 
-### 6.6 后续升级策略
+### 6.7 后续升级策略
 
 - rootfs、Node 和 Pi 分别版本化，禁止静默跨大版本更新。
 - 下载内容必须校验 SHA-256，并使用临时目录安装。
@@ -306,7 +336,26 @@ interface RawProcess {
 
 实现优先使用 Android `ProcessBuilder` 启动已打包且可执行的 native bash，`redirectErrorStream(false)`。如果目标 Android 版本上的进程组、管道或可执行限制无法满足验收，则在 fork 中增加 `fork`/`pipe`/`dup2`/`execve` 的 JNI raw process 实现。两种实现都不得调用 `forkpty()`。
 
-### 7.3 JSONL 解码规则
+### 7.3 多会话进程与目录映射
+
+后续版本允许多个会话持久存在，并允许受设备资源上限约束的多个 Agent 进程并发运行。每个活动会话拥有独立的 Agent 进程和当前工作区，但所有 Agent 进程共享同一份 Pi 全局配置。
+
+每个 Agent 的 PRoot 文件系统映射独立建立：会话选择的宿主工作区统一映射为 guest `/workspace`，应用级 Pi 目录统一映射为 guest `/mobile-pi/pi`，并设置 `PI_CODING_AGENT_DIR=/mobile-pi/pi/config`。例如：
+
+| Agent 进程 | 宿主工作区 | Guest 工作目录 | 宿主 Pi 全局目录 | Guest Pi 全局目录 |
+|---|---|---|---|---|
+| Session A | `workspaces/a/files` | `/workspace` | `pi` | `/mobile-pi/pi` |
+| Session B | `workspaces/b/files` | `/workspace` | `pi` | `/mobile-pi/pi` |
+
+工作区路径不能由 UI 以任意字符串直接传入 launcher，必须通过 `WorkspaceId` 解析为已授权且规范化的宿主路径。launcher 应允许受管工作区根目录下的合法路径或经过对应渠道授权的直接工作区，不能继续只允许单个 PoC 目录。
+
+会话切换工作区只允许在 Agent 空闲时执行。切换操作必须停止旧 Agent、原子更新 `Session.workspaceId`、以新映射启动 Agent，再恢复该会话状态；运行中的切换请求应拒绝或在用户确认后先中止，不能通过向现有进程发送 `cd` 来改变约束。旧进程的迟到 RPC 事件必须通过进程实例标识丢弃。
+
+Pi 全局配置的普通读取可以并发；package 安装、升级、全局迁移及其他结构性写入必须取得应用级独占锁，并与所有 Agent 进程的启动和运行互斥。会话历史、临时文件、日志和恢复元数据按 `SessionId` 隔离，不能写入共享配置文件。应用可保存任意数量的会话，但应根据真机内存和发热测试限制并发 Agent 数量。
+
+诊断终端打开时绑定当前选中会话的工作区，并共享同一 Pi 全局配置。由于 TerminalCore 当前的本地运行配置是进程级单例，多工作区版本需要支持按 terminal session 传入运行配置，或在切换诊断目标时明确重建 terminal session。
+
+### 7.4 JSONL 解码规则
 
 - 输入按原始字节增量读取，使用有状态 UTF-8 decoder。
 - 只把字节 `0x0A`（LF）作为记录边界。
@@ -316,7 +365,7 @@ interface RawProcess {
 - JSON 解析失败必须保留脱敏后的原始帧摘要、进程版本和前后事件序号。
 - stdout 不允许兼作普通日志；所有运行环境和 Pi 诊断信息走 stderr。
 
-### 7.4 RPC 能力分期
+### 7.5 RPC 能力分期
 
 第一阶段只实现：
 
@@ -336,7 +385,7 @@ interface RawProcess {
 
 RPC event 本身没有请求 ID，不能错误地与最近一个命令绑定；会话状态必须依靠事件类型、tool call ID 和 Agent 生命周期组合更新。
 
-### 7.5 Agent 生命周期
+### 7.6 Agent 生命周期
 
 | 状态 | 进入条件 | 退出条件 |
 |---|---|---|
@@ -349,7 +398,7 @@ RPC event 本身没有请求 ID，不能错误地与最近一个命令绑定；�
 
 停止顺序：发送 RPC `abort`，等待短暂宽限；关闭 stdin；发送进程终止；宽限后强制终止整个子进程树。不能只杀死外层 bash 而遗留 Node。
 
-### 7.6 Service 策略
+### 7.7 Service 策略
 
 - `0.1.0` 使用同进程、仅在前台页面存活的 bound service 或生命周期组件，减少变量。
 - `0.2.0` 引入非 exported 的 foreground service，执行中显示系统通知，并遵守 Android 后台启动限制。
@@ -426,7 +475,7 @@ SAF 提供 `content://` URI 和 `ContentResolver`，不是普通 POSIX 路径，
 - 启动/停止 Agent 控件。
 - 简单消息列表、文本输入和发送/中止按钮。
 - 折叠式诊断区域，显示阶段、退出码和脱敏 stderr。
-- Debug 构建在 runtime READY 后显示本地 Ubuntu 终端入口，复用 TerminalCore PTY，不作为 Release 功能；终端与非 PTY Agent 共享 `/workspace` 和 `PI_CODING_AGENT_DIR=/mobile-pi/pi/config`，可直接检查工作区并修改 App Agent 使用的 Pi 全局配置。
+- Debug 构建在 runtime READY 后显示本地 Ubuntu 终端入口，复用 TerminalCore PTY，不作为 Release 功能；终端固定使用与非 PTY Agent 相同的 PRoot 模式，共享 `/workspace` 和 `PI_CODING_AGENT_DIR=/mobile-pi/pi/config`。这两个宿主注入挂载属于启动必需条件，挂载失败时终端必须报错退出，不能静默回退到 rootfs 内的同名目录。
 
 不实现首页宣传内容、会话侧栏、文件浏览器、Markdown 高级渲染或产品级终端。
 

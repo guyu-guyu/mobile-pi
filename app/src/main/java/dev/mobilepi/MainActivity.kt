@@ -43,6 +43,7 @@ class MainActivity : ComponentActivity() {
                     "PI_TELEMETRY" to "0",
                 ),
                 initialWorkingDirectory = TerminalCoreRawProcessLauncher.GUEST_WORKSPACE,
+                allowChroot = false,
             ),
         )
     }

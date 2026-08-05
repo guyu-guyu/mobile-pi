@@ -36,6 +36,10 @@ _避免使用_：聊天、终端会话、进程
 服务于一个活动会话，并与 Mobile Pi 通信的 Pi 运行实例。
 _避免使用_：会话、Shell
 
+**Pi 全局配置（Global Pi Configuration）**：
+由所有会话共同使用的用户级 Pi 设置与资源配置；不包含会话历史或工作区本地配置。
+_避免使用_：会话配置、工作区配置
+
 **Pi 资源（Pi Resource）**：
 Pi 能够发现和加载的 extension、skill、prompt template 或 theme。
 _避免使用_：插件、附加组件

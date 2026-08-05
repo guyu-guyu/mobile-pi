@@ -44,6 +44,20 @@ Debug APK 输出至 `app/build/outputs/apk/debug/app-debug.apk`。
 - 通过独立的非 PTY 进程运行 `pi --mode rpc`，严格分离 stdin、stdout 和 stderr。
 - 可行性版本只使用应用私有工作区；手机文件访问在后续版本中按明确的存储策略实现。
 
+## 运行目录
+
+应用私有文件根目录通常为 `/data/user/0/dev.mobilepi/files`，也可通过等价路径 `/data/data/dev.mobilepi/files` 访问。PRoot 为 Pi 与诊断终端提供以下目录映射：
+
+| 用途 | Android 宿主路径（相对应用文件根目录） | Ubuntu/PRoot 路径 |
+|---|---|---|
+| Ubuntu rootfs | `usr/var/lib/proot-distro/installed-rootfs/ubuntu` | `/` |
+| 当前 PoC 工作区 | `workspaces/poc/files` | `/workspace` |
+| Pi 共享目录 | `pi` | `/mobile-pi/pi` |
+| Pi 全局配置 | `pi/config` | `/mobile-pi/pi/config` |
+| 共享临时目录 | `tmp` | `/tmp` |
+
+终端执行 `cd /` 后看到的是组合后的 Ubuntu guest 根目录，不是 Android 应用文件根目录。rootfs 中的 `/workspace` 与 `/mobile-pi/pi` 是仍在使用的挂载目标，不是可删除的历史遗留目录；运行时内容分别来自宿主工作区与 Pi 共享目录。详细生命周期和未来多会话映射见 [完整技术设计](docs/TECHNICAL_DESIGN.md#63-目录布局与挂载契约)。
+
 ## 文档索引
 
 - [领域术语](CONTEXT.md)
@@ -52,6 +66,7 @@ Debug APK 输出至 `app/build/outputs/apk/debug/app-debug.apk`。
 - [CI/CD 与版本发布](docs/RELEASING.md)
 - [ADR 0001：复用 OperitTerminalCore](docs/adr/0001-reuse-operit-terminal-core.md)
 - [ADR 0002：Pi RPC 使用非 PTY 进程](docs/adr/0002-use-non-pty-pi-rpc.md)
+- [ADR 0003：隔离 Agent 工作区并共享 Pi 全局配置](docs/adr/0003-isolate-agent-workspaces-share-pi-config.md)
 
 ## 第一阶段
 
