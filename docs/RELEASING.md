@@ -5,12 +5,13 @@
 - `.github/workflows/ci.yml`：所有分支的提交、面向 `main` 的 Pull Request
   以及手动触发时，运行 JVM 单元测试并构建 Debug APK。
 - `.github/workflows/release.yml`：收到语义化版本 tag 后，重新运行测试、构建
-  正式签名 APK、验证签名、生成 SHA-256，并创建 GitHub Release。
+  APK、验证签名、生成 SHA-256，并创建 GitHub Release。已配置正式签名时构建
+  Release APK；未配置时构建 Debug 签名的测试 APK 并创建 Pre-release。
 
 两个工作流都会按父仓库记录的精确提交初始化 `runtime/terminal-core`
 子模块，不会自动跟随子模块远程分支。
 
-## 配置 Release 签名
+## 配置正式 Release 签名
 
 Android 应用后续升级必须始终使用同一签名密钥。密钥丢失后，已安装应用将无法
 通过新版本覆盖升级。请在安全的离线位置备份 keystore、alias 和两个密码，
@@ -43,7 +44,7 @@ base64 -w 0 mobile-pi-release.jks
 
 ### 在 GitHub 添加 Repository secrets
 
-这里需要添加 **四条独立的 Repository secret**，不能把四项合并成一条，
+正式发布前需要添加 **四条独立的 Repository secret**，不能把四项合并成一条，
 也不要添加为 Environment secret。具体步骤：
 
 1. 打开 `https://github.com/guyu-guyu/mobile-pi`；
@@ -66,12 +67,18 @@ Secret 名称区分大小写，必须与下表完全一致。值中不要额外�
 `RELEASE_KEY_PASSWORD` 也必须分别创建。配置完成后，GitHub 页面应显示上述
 四个名称；出于安全原因，GitHub 不会再次显示 Secret 的原始值。
 
-Release 工作流在任一 Secret 缺失时会立即失败，不会发布 unsigned APK。
+四项 Secret 全部配置后，Release 工作流构建使用正式密钥签名的 Release APK。
+四项全部未配置时，工作流仍可用于测试发布：它会构建由 GitHub Runner 临时
+Debug 密钥签名的 APK，并强制创建 GitHub Pre-release。不同运行生成的 Debug
+密钥可能不同，因此这类 APK 不能保证相互覆盖升级；安装失败时需要先卸载旧版。
+
+如果只配置了部分 Secret，工作流会立即失败，防止错误配置被当成测试发布。
+工作流不会发布 unsigned APK。
 
 ## 创建版本发布
 
 发布 tag 格式为 `vMAJOR.MINOR.PATCH`，也支持
-`vMAJOR.MINOR.PATCH-prerelease`。例如：
+`vMAJOR.MINOR.PATCH-prerelease`。正式版本例如：
 
 ```bash
 git switch main
@@ -80,9 +87,17 @@ git tag -a v0.1.0 -m "Mobile Pi 0.1.0"
 git push origin v0.1.0
 ```
 
-预发布 tag（例如 `v0.2.0-beta.1`）会创建 GitHub Pre-release。正式 tag
-会创建普通 Release。工作流使用 tag 去掉 `v` 后的内容作为 Android
-`versionName`，并按以下公式生成 `versionCode`：
+尚未配置正式签名时，建议使用明确的测试标签：
+
+```bash
+git tag -a v0.1.0-test.1 -m "Mobile Pi 0.1.0 test 1"
+git push origin v0.1.0-test.1
+```
+
+预发布 tag（例如 `v0.2.0-beta.1`）会创建 GitHub Pre-release。配置正式签名
+后，正式 tag 会创建普通 Release；未配置正式签名时，所有 tag 都会创建
+Pre-release。工作流使用 tag 去掉 `v` 后的内容作为 Android `versionName`，
+并按以下公式生成 `versionCode`：
 
 ```text
 MAJOR * 1,000,000 + MINOR * 1,000 + PATCH
@@ -91,9 +106,14 @@ MAJOR * 1,000,000 + MINOR * 1,000 + PATCH
 `MAJOR` 不得超过 2099，`MINOR` 和 `PATCH` 不得超过 999，且计算结果
 必须大于 0。版本号应只递增，不要复用或移动已经推送的发布 tag。
 
-成功后，Release 包含：
+配置正式签名时，Release 包含：
 
 - `mobile-pi-VERSION-arm64-v8a.apk`：已验证签名的 ARM64 Release APK；
+- 同名 `.sha256` 文件：用于下载后校验完整性。
+
+未配置正式签名时，测试 Release 包含：
+
+- `mobile-pi-VERSION-arm64-v8a-debug.apk`：Debug 签名的 ARM64 测试 APK；
 - 同名 `.sha256` 文件：用于下载后校验完整性。
 
 ## 发布前检查
@@ -103,5 +123,6 @@ MAJOR * 1,000,000 + MINOR * 1,000 + PATCH
 1. tag 指向准备发布的 `main` 提交；
 2. CI 已在该提交上通过；
 3. TerminalCore 子模块提交已经推送到其远程仓库；
-4. 四个 Release Secret 已配置；
-5. 本地已安全备份正式签名密钥及密码。
+4. 正式发布时，四个 Release Secret 已配置；
+5. 正式发布时，本地已安全备份正式签名密钥及密码；
+6. 未配置签名时，使用预发布 tag，并确认该产物仅用于测试。

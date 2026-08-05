@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   release:
-    name: Build and publish signed APK
+    name: Build and publish APK
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -74,7 +74,8 @@ jobs:
           echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
           echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
-      - name: Validate release signing secrets
+      - name: Resolve signing mode
+        id: signing
         shell: bash
         env:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
@@ -82,17 +83,29 @@ jobs:
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          missing=()
-          [[ -n "$RELEASE_KEYSTORE_BASE64" ]] || missing+=(RELEASE_KEYSTORE_BASE64)
-          [[ -n "$RELEASE_KEYSTORE_PASSWORD" ]] || missing+=(RELEASE_KEYSTORE_PASSWORD)
-          [[ -n "$RELEASE_KEY_ALIAS" ]] || missing+=(RELEASE_KEY_ALIAS)
-          [[ -n "$RELEASE_KEY_PASSWORD" ]] || missing+=(RELEASE_KEY_PASSWORD)
-          if (( ${#missing[@]} > 0 )); then
-            echo "::error::Missing repository secrets: ${missing[*]}"
+          values=(
+            "$RELEASE_KEYSTORE_BASE64"
+            "$RELEASE_KEYSTORE_PASSWORD"
+            "$RELEASE_KEY_ALIAS"
+            "$RELEASE_KEY_PASSWORD"
+          )
+          configured=0
+          for value in "${values[@]}"; do
+            [[ -n "$value" ]] && configured=$((configured + 1))
+          done
+
+          if (( configured == 0 )); then
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Release signing is not configured; publishing a debug-signed test APK"
+          elif (( configured == ${#values[@]} )); then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Release signing must be either fully configured or completely omitted"
             exit 1
           fi
 
       - name: Restore release keystore
+        if: steps.signing.outputs.signed == 'true'
         shell: bash
         env:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
@@ -102,6 +115,7 @@ jobs:
           test -s "$RUNNER_TEMP/mobile-pi-release.jks"
 
       - name: Test and assemble signed release APK
+        if: steps.signing.outputs.signed == 'true'
         shell: bash
         env:
           MOBILE_PI_KEYSTORE_FILE: ${{ runner.temp }}/mobile-pi-release.jks
@@ -112,19 +126,31 @@ jobs:
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace :runtime:pi:testDebugUnitTest :app:assembleRelease -PreleaseVersionName="${{ steps.version.outputs.version_name }}" -PreleaseVersionCode="${{ steps.version.outputs.version_code }}"
 
+      - name: Test and assemble debug-signed test APK
+        if: steps.signing.outputs.signed != 'true'
+        shell: bash
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace :runtime:pi:testDebugUnitTest :app:assembleDebug -PreleaseVersionName="${{ steps.version.outputs.version_name }}" -PreleaseVersionCode="${{ steps.version.outputs.version_code }}"
+
       - name: Verify and package APK
         id: package
         shell: bash
         run: |
-          source_apk="app/build/outputs/apk/release/app-release.apk"
+          version_name="${{ steps.version.outputs.version_name }}"
+          if [[ "${{ steps.signing.outputs.signed }}" == "true" ]]; then
+            source_apk="app/build/outputs/apk/release/app-release.apk"
+            asset_name="mobile-pi-${version_name}-arm64-v8a.apk"
+          else
+            source_apk="app/build/outputs/apk/debug/app-debug.apk"
+            asset_name="mobile-pi-${version_name}-arm64-v8a-debug.apk"
+          fi
           test -f "$source_apk"
 
           build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
           test -x "$build_tools/apksigner"
           "$build_tools/apksigner" verify --verbose --print-certs "$source_apk"
 
-          version_name="${{ steps.version.outputs.version_name }}"
-          asset_name="mobile-pi-${version_name}-arm64-v8a.apk"
           mkdir -p dist
           cp "$source_apk" "dist/$asset_name"
           (
@@ -152,10 +178,17 @@ jobs:
             dist/*.apk
             dist/*.sha256
             --verify-tag
-            --generate-notes
             --title "Mobile Pi ${{ steps.version.outputs.version_name }}"
           )
-          if [[ "${{ steps.version.outputs.prerelease }}" == "true" ]]; then
-            args+=(--prerelease)
+          if [[ "${{ steps.signing.outputs.signed }}" != "true" ]]; then
+            args+=(
+              --prerelease
+              --notes "Debug-signed test build. Uninstall builds signed by a different key before installing this APK."
+            )
+          else
+            args+=(--generate-notes)
+            if [[ "${{ steps.version.outputs.prerelease }}" == "true" ]]; then
+              args+=(--prerelease)
+            fi
           fi
           gh release create "${args[@]}"
