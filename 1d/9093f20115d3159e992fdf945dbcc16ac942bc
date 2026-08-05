@@ -1,0 +1,19 @@
+docs/RELEASING.md
+  s_902cad04ef7408::t_456503ffb69e72 44-56,60-62,65-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "1d9093f20115d3159e992fdf945dbcc16ac942bc",
+  "prompts": {},
+  "sessions": {
+    "s_902cad04ef7408": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc5b3-bebb-7de3-8df8-886c41991221",
+        "model": "unknown"
+      },
+      "human_author": "leijieliu <leijieliu@tencent.com>"
+    }
+  }
+}
