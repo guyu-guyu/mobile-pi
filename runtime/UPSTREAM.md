@@ -6,9 +6,11 @@
 - commit: `f85be57944b806de4d863dee8b10d80d04daa236`
 - license: LGPL-3.0
 
-The maintained fork is published on the `terminal-core` branch of the Mobile Pi
-repository. The submodule retains the upstream repository as its local `origin`;
-compatibility tests must pass before changing the pinned baseline.
+The maintained fork is published at
+`https://github.com/guyu-guyu/OperitTerminalCore.git` on the `mobile-pi` branch.
+In a local submodule clone, `origin` points to that fork and `upstream` points to
+the repository above. Compatibility tests must pass before changing the pinned
+baseline.
 
 ## Mobile Pi modifications
 

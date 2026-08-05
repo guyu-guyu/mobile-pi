@@ -1,4 +1,4 @@
 [submodule "runtime/terminal-core"]
 	path = runtime/terminal-core
-	url = https://github.com/guyu-guyu/mobile-pi.git
-	branch = terminal-core
+	url = https://github.com/guyu-guyu/OperitTerminalCore.git
+	branch = mobile-pi
