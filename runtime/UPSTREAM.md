@@ -8,9 +8,9 @@
 
 The maintained fork is published at
 `https://github.com/guyu-guyu/OperitTerminalCore.git` on the `mobile-pi` branch.
-In a local submodule clone, `origin` points to that fork and `upstream` points to
-the repository above. Compatibility tests must pass before changing the pinned
-baseline.
+In a local submodule clone, `origin` points to that fork. Fork maintainers should
+add the repository above as `upstream` before syncing. Compatibility tests must
+pass before changing the pinned baseline.
 
 ## Mobile Pi modifications
 
