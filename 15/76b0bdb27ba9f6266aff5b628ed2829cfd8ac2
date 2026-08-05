@@ -1,0 +1,39 @@
+CONTEXT.md
+  s_cedcfa4c233117::t_5a5e4fdb684a88 39-42
+app/src/main/java/dev/mobilepi/MainActivity.kt
+  s_cedcfa4c233117::t_6448f3fd6a64ea 46
+docs/PHASE_0.1_PROGRESS.md
+  s_cedcfa4c233117::t_8284c2a4a18fa3 48
+docs/ROADMAP.md
+  s_cedcfa4c233117::t_657f9a73b770b2 246-248,262-263
+docs/TECHNICAL_DESIGN.md
+  s_cedcfa4c233117::t_1aac57ac5f0622 207-237,253,272,284,339-358,368,388,401,478
+docs/adr/0003-isolate-agent-workspaces-share-pi-config.md
+  s_cedcfa4c233117::t_7b4fd8a33dde15 1-11
+runtime/terminal-core
+  s_902cad04ef7408::t_b1b7266089e50c 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "1576b0bdb27ba9f6266aff5b628ed2829cfd8ac2",
+  "prompts": {},
+  "sessions": {
+    "s_902cad04ef7408": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc5b3-bebb-7de3-8df8-886c41991221",
+        "model": "unknown"
+      },
+      "human_author": "leijieliu <leijieliu@tencent.com>"
+    },
+    "s_cedcfa4c233117": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd0f4-d46d-72b2-b21b-a7ab366c8738",
+        "model": "unknown"
+      },
+      "human_author": "leijieliu <leijieliu@tencent.com>"
+    }
+  }
+}
