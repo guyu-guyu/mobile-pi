@@ -1,0 +1,27 @@
+.github/workflows/ci.yml
+  s_902cad04ef7408::t_de7c62bfb28377 1-57
+.github/workflows/release.yml
+  s_902cad04ef7408::t_5880dd73e3734a 1-161
+README.md
+  s_902cad04ef7408::t_52c3fd3d6179ba 3-5,33-39,52
+app/build.gradle.kts
+  s_902cad04ef7408::t_cdad59c7bcc2b2 9-27,36-37,45-55,59
+docs/RELEASING.md
+  s_902cad04ef7408::t_805365dba6e3cc 1-93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "b15aed92b669865e60fe8180b0d81d54edd692e3",
+  "prompts": {},
+  "sessions": {
+    "s_902cad04ef7408": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc5b3-bebb-7de3-8df8-886c41991221",
+        "model": "unknown"
+      },
+      "human_author": "leijieliu <leijieliu@tencent.com>"
+    }
+  }
+}
