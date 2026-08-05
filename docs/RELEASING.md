@@ -41,15 +41,30 @@ Linux：
 base64 -w 0 mobile-pi-release.jks
 ```
 
-打开 GitHub 仓库的 `Settings -> Secrets and variables -> Actions`，创建以下
-Repository secrets：
+### 在 GitHub 添加 Repository secrets
+
+这里需要添加 **四条独立的 Repository secret**，不能把四项合并成一条，
+也不要添加为 Environment secret。具体步骤：
+
+1. 打开 `https://github.com/guyu-guyu/mobile-pi`；
+2. 进入 `Settings -> Secrets and variables -> Actions`；
+3. 在 `Repository secrets` 区域点击 `New repository secret`；
+4. 在 `Name` 中填写下表中的 Secret 名称，在 `Secret` 中填写对应内容，
+   然后点击 `Add secret`；
+5. 重复第 3、4 步，直到下表四条 Secret 都已创建。
+
+Secret 名称区分大小写，必须与下表完全一致。值中不要额外添加引号或首尾空格。
 
 | Secret | 内容 |
 | --- | --- |
-| `RELEASE_KEYSTORE_BASE64` | keystore 文件的单行 Base64 |
-| `RELEASE_KEYSTORE_PASSWORD` | keystore 密码 |
-| `RELEASE_KEY_ALIAS` | 签名 alias，例如 `mobile-pi` |
+| `RELEASE_KEYSTORE_BASE64` | keystore 文件的单行 Base64 内容，不是文件路径 |
+| `RELEASE_KEYSTORE_PASSWORD` | 生成 keystore 时输入的 keystore 密码 |
+| `RELEASE_KEY_ALIAS` | 生成密钥时设置的 alias，例如 `mobile-pi` |
 | `RELEASE_KEY_PASSWORD` | alias 对应的私钥密码 |
+
+即使 keystore 密码与私钥密码相同，`RELEASE_KEYSTORE_PASSWORD` 和
+`RELEASE_KEY_PASSWORD` 也必须分别创建。配置完成后，GitHub 页面应显示上述
+四个名称；出于安全原因，GitHub 不会再次显示 Secret 的原始值。
 
 Release 工作流在任一 Secret 缺失时会立即失败，不会发布 unsigned APK。
 
@@ -90,4 +105,3 @@ MAJOR * 1,000,000 + MINOR * 1,000 + PATCH
 3. TerminalCore 子模块提交已经推送到其远程仓库；
 4. 四个 Release Secret 已配置；
 5. 本地已安全备份正式签名密钥及密码。
-
