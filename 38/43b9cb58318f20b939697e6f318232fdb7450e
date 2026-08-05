@@ -1,0 +1,25 @@
+CONTEXT.md
+  s_cedcfa4c233117::t_d23c8af33af874 39-42
+docs/ROADMAP.md
+  s_cedcfa4c233117::t_1681e9755e9a49 249-250,266-267
+docs/TECHNICAL_DESIGN.md
+  s_cedcfa4c233117::t_614e499e5923b4 356-365
+docs/adr/0003-isolate-agent-workspaces-share-pi-config.md
+  s_cedcfa4c233117::t_b132e9bf35b042 12-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "3843b9cb58318f20b939697e6f318232fdb7450e",
+  "prompts": {},
+  "sessions": {
+    "s_cedcfa4c233117": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fd0f4-d46d-72b2-b21b-a7ab366c8738",
+        "model": "unknown"
+      },
+      "human_author": "leijieliu <leijieliu@tencent.com>"
+    }
+  }
+}
