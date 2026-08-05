@@ -246,6 +246,8 @@
 - 多个 Session 可分别选择工作区；活动 Session 使用独立 Agent 进程，并可在设备资源上限内并发运行。
 - 每个 Agent 将自己的宿主工作区映射为 `/workspace`，所有 Agent 共享同一 Pi 全局配置目录。
 - 空闲 Session 可通过停止并重启 Agent 切换工作区；运行中的切换必须拒绝或先由用户确认中止。
+- 与多会话同时实现未绑定诊断终端：不关联 Session/Workspace，不调用进程级 `configureLocalRuntime()`，不附加 `/workspace` 和 `/mobile-pi/pi` 映射，并从 TerminalCore 默认 `/root` 启动。
+- 将 terminal 本地运行配置从当前进程级单例改为按 terminal session 提供，或为未绑定终端使用隔离的 manager/process，确保绑定与未绑定模式不会相互继承配置。
 - 文件浏览、搜索、diff、冲突处理和单文件导入/导出。
 - 从 Android 分享菜单接收文本、图片和文档。
 - 图片 prompt 与相机/相册选择。
@@ -261,6 +263,8 @@
 - 切换工作区不会把 Session 命令发送到错误目录。
 - 两个并发 Agent 分别修改各自工作区时不会发生跨工作区读写，且均能读取相同的 Pi 全局配置。
 - package 安装、全局配置迁移与全部 Agent 运行互斥，并发 Agent 数量具有经过真机验证的上限。
+- 未绑定诊断终端没有 `SessionId`、`WorkspaceId` 或 `PI_CODING_AGENT_DIR`，其 `/workspace`、`/mobile-pi/pi` 不解析到任何 Android 工作区或 Pi 共享目录。
+- 依次或并发打开会话绑定 terminal 与未绑定诊断终端时，两者的 cwd、环境变量和挂载配置不会串用；关闭其中一个不会影响另一个。
 - 文件同步在大文件、二进制文件、重命名、删除和 provider 异常下有明确结果。
 - 分享进来的内容不会绕过工作区授权。
 - Session tree/fork 与 Pi RPC 状态一致，应用重启后仍可恢复。

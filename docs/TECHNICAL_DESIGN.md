@@ -353,7 +353,16 @@ interface RawProcess {
 
 Pi 全局配置的普通读取可以并发；package 安装、升级、全局迁移及其他结构性写入必须取得应用级独占锁，并与所有 Agent 进程的启动和运行互斥。会话历史、临时文件、日志和恢复元数据按 `SessionId` 隔离，不能写入共享配置文件。应用可保存任意数量的会话，但应根据真机内存和发热测试限制并发 Agent 数量。
 
-诊断终端打开时绑定当前选中会话的工作区，并共享同一 Pi 全局配置。由于 TerminalCore 当前的本地运行配置是进程级单例，多工作区版本需要支持按 terminal session 传入运行配置，或在切换诊断目标时明确重建 terminal session。
+多会话版本同时提供两种诊断 terminal 启动模式：
+
+| 模式 | Session/Workspace 关联 | 附加 guest 挂载 | 初始目录 |
+|---|---|---|---|
+| 会话绑定 terminal | 必须携带 `SessionId`，从会话解析当前 `WorkspaceId` | 当前工作区 → `/workspace`；共享 Pi 目录 → `/mobile-pi/pi` | `/workspace` |
+| 未绑定诊断终端 | 不携带 `SessionId` 或 `WorkspaceId` | 不添加 `/workspace` 或 `/mobile-pi/pi` 映射 | TerminalCore 默认 `/root` |
+
+未绑定诊断终端只检查基础内嵌运行环境，不调用进程级 `configureLocalRuntime()`，也不能继承此前会话绑定 terminal 的工作区、`PI_CODING_AGENT_DIR` 或挂载配置。rootfs 中即使存在 `/workspace`、`/mobile-pi/pi` 挂载目标名称，也不得把它们映射到 Android 工作区或 Pi 共享目录。
+
+TerminalCore 当前的 `configureLocalRuntime()` 和 `TerminalManager` 均为进程级单例配置，无法可靠支持两种模式及多个会话同时存在。该功能必须与多会话一起开发：将本地运行配置下沉到 terminal session 启动参数，或者为未绑定终端提供隔离的 manager/process；不能通过修改全局配置后复用旧 terminal session。未绑定模式不构成安全沙箱，TerminalCore 基础 bind 仍可能通过 `/data/data/dev.mobilepi` 等路径暴露应用沙箱；如果产品目标升级为文件访问隔离，需要另行裁剪基础 bind 策略。
 
 ### 7.4 JSONL 解码规则
 
