@@ -1,0 +1,161 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish signed APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Install Android SDK components
+        shell: bash
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "cmake;3.22.1"
+
+      - name: Validate and resolve version tag
+        id: version
+        shell: bash
+        run: |
+          tag="$GITHUB_REF_NAME"
+          pattern='^v([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$'
+          if [[ ! "$tag" =~ $pattern ]]; then
+            echo "::error::Tag must match vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-prerelease"
+            exit 1
+          fi
+
+          major=$((10#${BASH_REMATCH[1]}))
+          minor=$((10#${BASH_REMATCH[2]}))
+          patch=$((10#${BASH_REMATCH[3]}))
+          if (( major > 2099 || minor > 999 || patch > 999 )); then
+            echo "::error::MAJOR must be <= 2099; MINOR and PATCH must be <= 999"
+            exit 1
+          fi
+
+          version_code=$((major * 1000000 + minor * 1000 + patch))
+          if (( version_code < 1 || version_code > 2100000000 )); then
+            echo "::error::Computed Android versionCode is outside the valid range"
+            exit 1
+          fi
+
+          version_name="${tag#v}"
+          prerelease=false
+          if [[ "$version_name" == *-* ]]; then
+            prerelease=true
+          fi
+
+          echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
+          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+
+      - name: Validate release signing secrets
+        shell: bash
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          missing=()
+          [[ -n "$RELEASE_KEYSTORE_BASE64" ]] || missing+=(RELEASE_KEYSTORE_BASE64)
+          [[ -n "$RELEASE_KEYSTORE_PASSWORD" ]] || missing+=(RELEASE_KEYSTORE_PASSWORD)
+          [[ -n "$RELEASE_KEY_ALIAS" ]] || missing+=(RELEASE_KEY_ALIAS)
+          [[ -n "$RELEASE_KEY_PASSWORD" ]] || missing+=(RELEASE_KEY_PASSWORD)
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Missing repository secrets: ${missing[*]}"
+            exit 1
+          fi
+
+      - name: Restore release keystore
+        shell: bash
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          umask 077
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/mobile-pi-release.jks"
+          test -s "$RUNNER_TEMP/mobile-pi-release.jks"
+
+      - name: Test and assemble signed release APK
+        shell: bash
+        env:
+          MOBILE_PI_KEYSTORE_FILE: ${{ runner.temp }}/mobile-pi-release.jks
+          MOBILE_PI_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          MOBILE_PI_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          MOBILE_PI_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace :runtime:pi:testDebugUnitTest :app:assembleRelease -PreleaseVersionName="${{ steps.version.outputs.version_name }}" -PreleaseVersionCode="${{ steps.version.outputs.version_code }}"
+
+      - name: Verify and package APK
+        id: package
+        shell: bash
+        run: |
+          source_apk="app/build/outputs/apk/release/app-release.apk"
+          test -f "$source_apk"
+
+          build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          test -x "$build_tools/apksigner"
+          "$build_tools/apksigner" verify --verbose --print-certs "$source_apk"
+
+          version_name="${{ steps.version.outputs.version_name }}"
+          asset_name="mobile-pi-${version_name}-arm64-v8a.apk"
+          mkdir -p dist
+          cp "$source_apk" "dist/$asset_name"
+          (
+            cd dist
+            sha256sum "$asset_name" > "$asset_name.sha256"
+          )
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: mobile-pi-${{ steps.version.outputs.version_name }}
+          path: |
+            dist/*.apk
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          args=(
+            "$GITHUB_REF_NAME"
+            dist/*.apk
+            dist/*.sha256
+            --verify-tag
+            --generate-notes
+            --title "Mobile Pi ${{ steps.version.outputs.version_name }}"
+          )
+          if [[ "${{ steps.version.outputs.prerelease }}" == "true" ]]; then
+            args+=(--prerelease)
+          fi
+          gh release create "${args[@]}"

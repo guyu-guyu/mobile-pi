@@ -1,5 +1,8 @@
 # Mobile Pi
 
+[![CI](https://github.com/guyu-guyu/mobile-pi/actions/workflows/ci.yml/badge.svg)](https://github.com/guyu-guyu/mobile-pi/actions/workflows/ci.yml)
+[![Release](https://github.com/guyu-guyu/mobile-pi/actions/workflows/release.yml/badge.svg)](https://github.com/guyu-guyu/mobile-pi/actions/workflows/release.yml)
+
 Mobile Pi 是一款无需安装 Termux、在 Android 应用内部运行 Pi coding agent 的应用。项目当前处于架构设计与可行性验证阶段。
 
 ## 开发状态
@@ -27,6 +30,13 @@ git submodule update --init --recursive
 
 Debug APK 输出至 `app/build/outputs/apk/debug/app-debug.apk`。
 
+## CI/CD 与发布
+
+仓库提交和 Pull Request 会自动运行 JVM 测试并构建 Debug APK。推送
+`vMAJOR.MINOR.PATCH` 格式的 tag 后，GitHub Actions 会构建正式签名 APK、
+校验签名和 SHA-256，并创建 GitHub Release。首次发布前必须配置签名 Secrets，
+详见 [CI/CD 与版本发布](docs/RELEASING.md)。
+
 ## 技术方向
 
 - fork 并固定 [OperitTerminalCore](https://github.com/AAswordman/OperitTerminalCore)，作为内嵌 Ubuntu/PRoot 运行环境。
@@ -39,6 +49,7 @@ Debug APK 输出至 `app/build/outputs/apk/debug/app-debug.apk`。
 - [领域术语](CONTEXT.md)
 - [完整技术设计](docs/TECHNICAL_DESIGN.md)
 - [版本路线图](docs/ROADMAP.md)
+- [CI/CD 与版本发布](docs/RELEASING.md)
 - [ADR 0001：复用 OperitTerminalCore](docs/adr/0001-reuse-operit-terminal-core.md)
 - [ADR 0002：Pi RPC 使用非 PTY 进程](docs/adr/0002-use-non-pty-pi-rpc.md)
 
