@@ -1,0 +1,21 @@
+.github/workflows/release.yml
+  s_902cad04ef7408::t_ae058287267768 17,77-78,86-103,108,118,129-135,140-147,183-192
+docs/RELEASING.md
+  s_902cad04ef7408::t_5f684c6833054e 8-9,14,47,70-76,81,90-100,109,114-118,126-128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "7e9ab0cf9a88fb7f490b18f9becc99b297a8e464",
+  "prompts": {},
+  "sessions": {
+    "s_902cad04ef7408": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc5b3-bebb-7de3-8df8-886c41991221",
+        "model": "unknown"
+      },
+      "human_author": "leijieliu <leijieliu@tencent.com>"
+    }
+  }
+}
