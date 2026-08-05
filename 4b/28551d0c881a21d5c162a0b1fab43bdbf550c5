@@ -1,0 +1,21 @@
+.gitmodules
+  s_902cad04ef7408::t_9f84fd02e133dd 3-4
+runtime/UPSTREAM.md
+  s_902cad04ef7408::t_2c5df855d736b7 9-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "4b28551d0c881a21d5c162a0b1fab43bdbf550c5",
+  "prompts": {},
+  "sessions": {
+    "s_902cad04ef7408": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc5b3-bebb-7de3-8df8-886c41991221",
+        "model": "unknown"
+      },
+      "human_author": "leijieliu <leijieliu@tencent.com>"
+    }
+  }
+}
