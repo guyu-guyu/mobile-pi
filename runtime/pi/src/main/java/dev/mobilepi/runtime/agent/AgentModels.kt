@@ -23,6 +23,15 @@ data class ToolExecution(
     val callId: String,
     val name: String,
     val status: ToolStatus,
+    val output: String? = null,
+)
+
+data class SessionStatistics(
+    val totalTokens: Long? = null,
+    val costUsd: Double? = null,
+    val contextTokens: Long? = null,
+    val contextWindow: Long? = null,
+    val contextPercent: Double? = null,
 )
 
 data class ProofResult(
@@ -37,4 +46,7 @@ data class AgentSnapshot(
     val tools: List<ToolExecution> = emptyList(),
     val error: String? = null,
     val proofResult: ProofResult? = null,
+    val sessionId: String? = null,
+    val sessionName: String? = null,
+    val sessionStatistics: SessionStatistics = SessionStatistics(),
 )

@@ -8,10 +8,14 @@ import org.junit.Test
 
 class PiRpcProtocolTest {
     @Test
-    fun `decodes agent end as settled`() {
+    fun `decodes agent end and settled as distinct lifecycle events`() {
         assertEquals(
             PiRpcMessage.Event.AgentEnd,
             PiRpcProtocol.decode(json.parseToJsonElement("""{"type":"agent_end","messages":[]}""").jsonObject),
+        )
+        assertEquals(
+            PiRpcMessage.Event.AgentSettled,
+            PiRpcProtocol.decode(json.parseToJsonElement("""{"type":"agent_settled"}""").jsonObject),
         )
     }
 
@@ -41,12 +45,13 @@ class PiRpcProtocolTest {
     @Test
     fun `decodes tool completion status by call id`() {
         val value = json.parseToJsonElement(
-            """{"type":"tool_execution_end","toolCallId":"call-1","toolName":"write","isError":false}""",
+            """{"type":"tool_execution_end","toolCallId":"call-1","toolName":"write","isError":false,"result":{"content":[{"type":"text","text":"created file"}]}}""",
         ).jsonObject
 
         val event = PiRpcProtocol.decode(value) as PiRpcMessage.Event.ToolEnd
         assertEquals("call-1", event.callId)
         assertEquals("write", event.name)
         assertFalse(event.isError)
+        assertEquals("created file", event.output)
     }
 }

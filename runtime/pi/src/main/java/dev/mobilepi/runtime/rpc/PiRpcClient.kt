@@ -84,6 +84,12 @@ class PiRpcClient(
 
     suspend fun getState(): JsonElement? = request("get_state")
 
+    suspend fun getMessages(): JsonElement? = request("get_messages")
+
+    suspend fun getSessionStats(): JsonElement? = request("get_session_stats")
+
+    suspend fun newSession(): JsonElement? = request("new_session")
+
     suspend fun prompt(message: String) = request("prompt") {
         put("message", message)
     }

@@ -1,9 +1,15 @@
 package dev.mobilepi.runtime.process
 
+import java.io.File
+import java.util.UUID
+
 data class PiAgentConfig(
     val provider: String,
     val model: String,
     val apiKey: String,
+    val workspaceDirectory: String,
+    val sessionDirectory: String,
+    val resumeExistingSession: Boolean,
 )
 
 object PiProcessSpecFactory {
@@ -17,8 +23,26 @@ object PiProcessSpecFactory {
 
         val keyVariable = providerApiKeyVariable(provider)
             ?: throw IllegalArgumentException("Unsupported API-key provider: $provider")
-        return RawProcessSpec(
-            command = listOf(
+        val workspaceDirectory = File(config.workspaceDirectory).canonicalFile
+        val sessionDirectory = File(config.sessionDirectory).canonicalFile
+        val workspacesRoot = File(paths.files, "workspaces").canonicalFile
+        val workspaceId = workspaceDirectory.parentFile?.name
+        require(
+            workspaceDirectory.name == "files" &&
+                workspaceDirectory.parentFile?.parentFile == workspacesRoot &&
+                workspaceId != null &&
+                runCatching { UUID.fromString(workspaceId).toString() == workspaceId }.getOrDefault(false),
+        ) {
+            "Agent working directory must be a canonical managed workspace"
+        }
+        require(
+            sessionDirectory.parentFile == paths.sessions.canonicalFile &&
+                sessionDirectory.name == workspaceId,
+        ) {
+            "Agent Session directory must match the managed workspace"
+        }
+        val command = buildList {
+            addAll(listOf(
                 "/usr/bin/pi",
                 "--mode",
                 "rpc",
@@ -26,15 +50,21 @@ object PiProcessSpecFactory {
                 provider,
                 "--model",
                 model,
-                "--no-session",
+                "--session-dir",
+                TerminalCoreRawProcessLauncher.GUEST_SESSIONS,
                 "--no-extensions",
                 "--no-skills",
                 "--no-prompt-templates",
                 "--no-themes",
                 "--no-context-files",
-            ),
+            ))
+            if (config.resumeExistingSession) add("--continue")
+        }
+        return RawProcessSpec(
+            command = command,
             environment = mapOf(keyVariable to apiKey),
-            workingDirectory = paths.workspace.absolutePath,
+            workingDirectory = workspaceDirectory.absolutePath,
+            sessionDirectory = sessionDirectory.absolutePath,
         )
     }
 

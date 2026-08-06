@@ -1,18 +1,28 @@
 package dev.mobilepi.ui
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import dev.mobilepi.agent.AgentRecoveryStore
+import dev.mobilepi.agent.PiAgentServiceClient
+import dev.mobilepi.credentials.ProviderProfile
+import dev.mobilepi.credentials.ProviderProfileStore
 import dev.mobilepi.runtime.agent.AgentMessage
-import dev.mobilepi.runtime.agent.PiAgentController
 import dev.mobilepi.runtime.agent.ProofResult
 import dev.mobilepi.runtime.agent.AgentState
+import dev.mobilepi.runtime.agent.SessionStatistics
 import dev.mobilepi.runtime.agent.ToolExecution
 import dev.mobilepi.runtime.model.RuntimeInstallState
 import dev.mobilepi.runtime.model.RuntimeLogEntry
 import dev.mobilepi.runtime.model.RuntimeStatus
 import dev.mobilepi.runtime.process.PiAgentConfig
 import dev.mobilepi.runtime.setup.TerminalCoreRuntimeSetup
+import dev.mobilepi.workspaces.ManagedWorkspace
+import dev.mobilepi.workspaces.ManagedWorkspaceSyncPreview
+import dev.mobilepi.workspaces.WorkspaceRepository
+import dev.mobilepi.workspaces.sync.WorkspaceProgress
+import java.io.File
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -21,6 +31,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 data class MobilePiUiState(
     val provider: String = "",
@@ -34,11 +46,27 @@ data class MobilePiUiState(
     val agentError: String? = null,
     val diagnostics: List<RuntimeLogEntry> = emptyList(),
     val operationInProgress: Boolean = false,
+    val workspace: ManagedWorkspace? = null,
+    val workspacePermissionAvailable: Boolean = false,
+    val workspaceProgress: WorkspaceProgress? = null,
+    val workspaceOperationInProgress: Boolean = false,
+    val syncPreview: ManagedWorkspaceSyncPreview? = null,
+    val workspaceError: String? = null,
+    val profileSaved: Boolean = false,
+    val profileError: String? = null,
+    val recoveryNotice: String? = null,
+    val sessionId: String? = null,
+    val sessionName: String? = null,
+    val sessionStatistics: SessionStatistics = SessionStatistics(),
+    val agentStartInProgress: Boolean = false,
 )
 
 class MobilePiViewModel(application: Application) : AndroidViewModel(application) {
     private val runtimeSetup = TerminalCoreRuntimeSetup(application)
-    private val agent = PiAgentController(application)
+    private val agent = PiAgentServiceClient(application, viewModelScope)
+    private val workspaceRepository = WorkspaceRepository(application)
+    private val profileStore = ProviderProfileStore(application)
+    private val recoveryStore = AgentRecoveryStore(application)
     private val diagnosticSequence = AtomicLong()
     private val _uiState = MutableStateFlow(MobilePiUiState())
     val uiState = _uiState.asStateFlow()
@@ -64,6 +92,14 @@ class MobilePiViewModel(application: Application) : AndroidViewModel(application
                         tools = snapshot.tools,
                         proofResult = snapshot.proofResult,
                         agentError = snapshot.error,
+                        sessionId = snapshot.sessionId,
+                        sessionName = snapshot.sessionName,
+                        sessionStatistics = snapshot.sessionStatistics,
+                        recoveryNotice = if (snapshot.state != AgentState.STOPPED) {
+                            null
+                        } else {
+                            it.recoveryNotice
+                        },
                     )
                 }
             }
@@ -76,6 +112,7 @@ class MobilePiViewModel(application: Application) : AndroidViewModel(application
         if (runtimeSetup.status.value.state == RuntimeInstallState.VERIFYING) {
             inspectRuntime()
         }
+        loadPersistedState()
     }
 
     fun installRuntime() {
@@ -111,14 +148,32 @@ class MobilePiViewModel(application: Application) : AndroidViewModel(application
         if (runtimeStatus.value.state != RuntimeInstallState.READY ||
             state.agentState !in setOf(AgentState.STOPPED, AgentState.CRASHED)
         ) return
+        if (state.agentStartInProgress) return
+        val workspace = state.workspace ?: return
+        if (!state.workspacePermissionAvailable || state.workspaceOperationInProgress) return
         val config = PiAgentConfig(
             provider = state.provider,
             model = state.model,
             apiKey = state.apiKey,
+            workspaceDirectory = workspace.filesDirectory.absolutePath,
+            sessionDirectory = sessionDirectory(workspace).absolutePath,
+            resumeExistingSession = hasSession(workspace),
         )
+        _uiState.update { it.copy(agentStartInProgress = true) }
         viewModelScope.launch {
-            runCatching { agent.start(config) }
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    profileStore.save(
+                        ProviderProfile(state.provider, state.model, state.apiKey),
+                    )
+                }
+                _uiState.update {
+                    it.copy(profileSaved = true, profileError = null, syncPreview = null)
+                }
+                agent.start(config, workspace.id)
+            }
                 .onFailure { appendDiagnostic("agent/start", safeError(it)) }
+            _uiState.update { it.copy(agentStartInProgress = false) }
         }
     }
 
@@ -149,6 +204,14 @@ class MobilePiViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun newSession() {
+        if (_uiState.value.agentState != AgentState.READY) return
+        viewModelScope.launch {
+            runCatching { agent.newSession() }
+                .onFailure { appendDiagnostic("agent/session", safeError(it)) }
+        }
+    }
+
     fun verifyFileTool() {
         if (_uiState.value.agentState != AgentState.READY) return
         viewModelScope.launch {
@@ -157,12 +220,206 @@ class MobilePiViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun updateProvider(value: String) = _uiState.update { it.copy(provider = value) }
-    fun updateModel(value: String) = _uiState.update { it.copy(model = value) }
-    fun updateApiKey(value: String) = _uiState.update { it.copy(apiKey = value) }
+    fun updateProvider(value: String) = _uiState.update {
+        it.copy(provider = value, profileSaved = false, profileError = null)
+    }
+    fun updateModel(value: String) = _uiState.update {
+        it.copy(model = value, profileSaved = false, profileError = null)
+    }
+    fun updateApiKey(value: String) = _uiState.update {
+        it.copy(apiKey = value, profileSaved = false, profileError = null)
+    }
     fun updatePrompt(value: String) = _uiState.update { it.copy(prompt = value) }
 
+    fun saveProviderProfile() {
+        val state = _uiState.value
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    profileStore.save(ProviderProfile(state.provider, state.model, state.apiKey))
+                }
+            }.onSuccess {
+                _uiState.update { it.copy(profileSaved = true, profileError = null) }
+            }.onFailure { error ->
+                _uiState.update { it.copy(profileSaved = false, profileError = safeError(error)) }
+            }
+        }
+    }
+
+    fun clearProviderProfile() {
+        if (_uiState.value.agentState !in setOf(AgentState.STOPPED, AgentState.CRASHED)) return
+        viewModelScope.launch {
+            runCatching { withContext(Dispatchers.IO) { profileStore.clear() } }
+                .onSuccess {
+                    _uiState.update {
+                        it.copy(
+                            provider = "",
+                            model = "",
+                            apiKey = "",
+                            profileSaved = false,
+                            profileError = null,
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(profileError = safeError(error)) }
+                }
+        }
+    }
+
+    fun importWorkspace(treeUri: Uri) {
+        val state = _uiState.value
+        if (state.workspaceOperationInProgress ||
+            state.agentState !in setOf(AgentState.STOPPED, AgentState.CRASHED)
+        ) return
+        viewModelScope.launch {
+            setWorkspaceBusy(true)
+            runCatching {
+                workspaceRepository.importWorkspace(treeUri) { progress ->
+                    _uiState.update { it.copy(workspaceProgress = progress) }
+                }
+            }.onSuccess { result ->
+                _uiState.update {
+                    it.copy(
+                        workspace = result.workspace,
+                        workspacePermissionAvailable = true,
+                        workspaceError = null,
+                        syncPreview = null,
+                        messages = emptyList(),
+                        tools = emptyList(),
+                        proofResult = null,
+                        sessionId = null,
+                        sessionName = null,
+                        sessionStatistics = SessionStatistics(),
+                    )
+                }
+                appendDiagnostic("workspace/import", "Imported ${result.importedFiles} file(s)")
+            }.onFailure { error ->
+                _uiState.update { it.copy(workspaceError = safeError(error)) }
+            }
+            setWorkspaceBusy(false)
+        }
+    }
+
+    fun reportWorkspaceAccessFailure(error: Throwable) {
+        _uiState.update { it.copy(workspaceError = safeError(error)) }
+    }
+
+    fun previewWorkspaceSync() {
+        val state = _uiState.value
+        if (state.workspace == null || state.workspaceOperationInProgress ||
+            state.agentState !in setOf(AgentState.STOPPED, AgentState.CRASHED)
+        ) return
+        viewModelScope.launch {
+            setWorkspaceBusy(true)
+            runCatching {
+                workspaceRepository.previewSync { progress ->
+                    _uiState.update { it.copy(workspaceProgress = progress) }
+                }
+            }.onSuccess { preview ->
+                _uiState.update {
+                    it.copy(
+                        syncPreview = preview,
+                        workspaceError = null,
+                        workspacePermissionAvailable = true,
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update { it.copy(workspaceError = safeError(error), syncPreview = null) }
+            }
+            setWorkspaceBusy(false)
+        }
+    }
+
+    fun applyWorkspaceSync() {
+        val state = _uiState.value
+        val preview = state.syncPreview ?: return
+        if (state.workspaceOperationInProgress ||
+            state.agentState !in setOf(AgentState.STOPPED, AgentState.CRASHED) ||
+            preview.sync.plan.conflicts.isNotEmpty()
+        ) return
+        viewModelScope.launch {
+            setWorkspaceBusy(true)
+            runCatching {
+                workspaceRepository.applySync(preview) { progress ->
+                    _uiState.update { it.copy(workspaceProgress = progress) }
+                }
+            }.onSuccess { result ->
+                val workspace = workspaceRepository.activeWorkspace()
+                _uiState.update {
+                    it.copy(
+                        workspace = workspace,
+                        syncPreview = null,
+                        workspaceError = null,
+                        workspacePermissionAvailable = workspace?.let(
+                            workspaceRepository::hasPersistedPermission,
+                        ) == true,
+                    )
+                }
+                appendDiagnostic(
+                    "workspace/sync",
+                    "Applied ${result.appliedOperations} operation(s)",
+                )
+            }.onFailure { error ->
+                _uiState.update { it.copy(workspaceError = safeError(error), syncPreview = null) }
+            }
+            setWorkspaceBusy(false)
+        }
+    }
+
     private fun setBusy(value: Boolean) = _uiState.update { it.copy(operationInProgress = value) }
+
+    private fun setWorkspaceBusy(value: Boolean) = _uiState.update {
+        it.copy(
+            workspaceOperationInProgress = value,
+            workspaceProgress = if (value) it.workspaceProgress else null,
+        )
+    }
+
+    private fun loadPersistedState() {
+        viewModelScope.launch {
+            val profile = runCatching { withContext(Dispatchers.IO) { profileStore.load() } }
+                .onFailure { error ->
+                    _uiState.update { it.copy(profileError = safeError(error)) }
+                }
+                .getOrNull()
+            val workspace = runCatching { workspaceRepository.activeWorkspace() }
+                .onFailure { error ->
+                    _uiState.update { it.copy(workspaceError = safeError(error)) }
+                }
+                .getOrNull()
+            _uiState.update {
+                it.copy(
+                    provider = profile?.provider.orEmpty(),
+                    model = profile?.model.orEmpty(),
+                    apiKey = profile?.apiKey.orEmpty(),
+                    profileSaved = profile != null,
+                    workspace = workspace,
+                    workspacePermissionAvailable = workspace?.let(
+                        workspaceRepository::hasPersistedPermission,
+                    ) == true,
+                    recoveryNotice = if (
+                        it.agentState == AgentState.STOPPED &&
+                        recoveryStore.wasActive()
+                    ) {
+                        "The previous Agent process ended without a clean stop. Start the Agent to resume its saved Session."
+                    } else {
+                        null
+                    },
+                )
+            }
+        }
+    }
+
+    private fun sessionDirectory(workspace: ManagedWorkspace): File =
+        File(getApplication<Application>().filesDir, "sessions/${workspace.id}")
+
+    private fun hasSession(workspace: ManagedWorkspace): Boolean {
+        val directory = sessionDirectory(workspace)
+        return directory.isDirectory && directory.walkTopDown().any {
+            it.isFile && it.extension == "jsonl"
+        }
+    }
 
     private fun appendDiagnostic(stage: String, message: String, exitCode: Int? = null) {
         val entry = RuntimeLogEntry(

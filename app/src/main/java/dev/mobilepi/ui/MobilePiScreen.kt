@@ -1,5 +1,11 @@
 package dev.mobilepi.ui
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,9 +30,13 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -59,22 +69,57 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.activity.compose.BackHandler
+import androidx.core.content.ContextCompat
 import dev.mobilepi.BuildConfig
 import dev.mobilepi.runtime.agent.AgentState
 import dev.mobilepi.runtime.agent.MessageRole
 import dev.mobilepi.runtime.agent.ToolStatus
 import dev.mobilepi.runtime.model.RuntimeInstallState
 import dev.mobilepi.runtime.model.RuntimeStatus
+import dev.mobilepi.workspaces.sync.WorkspaceSyncOperation
 
 @Composable
 fun MobilePiApp(viewModel: MobilePiViewModel = viewModel()) {
+    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val runtimeStatus by viewModel.runtimeStatus.collectAsStateWithLifecycle()
     var confirmClear by remember { mutableStateOf(false) }
+    var confirmSync by remember { mutableStateOf(false) }
     var showTerminal by rememberSaveable { mutableStateOf(false) }
+    val workspacePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            }.onSuccess {
+                viewModel.importWorkspace(uri)
+            }.onFailure(viewModel::reportWorkspaceAccessFailure)
+        }
+    }
+    val notificationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) {
+        viewModel.startAgent()
+    }
+
+    fun startAgentWithNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            viewModel.startAgent()
+        }
+    }
 
     BackHandler(enabled = showTerminal) {
         showTerminal = false
@@ -104,6 +149,28 @@ fun MobilePiApp(viewModel: MobilePiViewModel = viewModel()) {
         )
     }
 
+    if (confirmSync) {
+        val operationCount = uiState.syncPreview?.sync?.plan?.operations?.size ?: 0
+        AlertDialog(
+            onDismissRequest = { confirmSync = false },
+            title = { Text("Apply workspace changes?") },
+            text = {
+                Text("$operationCount confirmed operation(s) will update the managed copy or selected directory.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmSync = false
+                        viewModel.applyWorkspaceSync()
+                    },
+                ) { Text("Apply") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmSync = false }) { Text("Cancel") }
+            },
+        )
+    }
+
     MobilePiScreen(
         state = uiState,
         runtimeStatus = runtimeStatus,
@@ -115,8 +182,14 @@ fun MobilePiApp(viewModel: MobilePiViewModel = viewModel()) {
         onRetryHealth = viewModel::inspectRuntime,
         onClear = { confirmClear = true },
         onOpenTerminal = { showTerminal = true },
-        onStartAgent = viewModel::startAgent,
+        onSelectWorkspace = { workspacePicker.launch(uiState.workspace?.treeUri) },
+        onPreviewSync = viewModel::previewWorkspaceSync,
+        onApplySync = { confirmSync = true },
+        onSaveProfile = viewModel::saveProviderProfile,
+        onClearProfile = viewModel::clearProviderProfile,
+        onStartAgent = ::startAgentWithNotificationPermission,
         onStopAgent = viewModel::stopAgent,
+        onNewSession = viewModel::newSession,
         onSend = viewModel::sendPrompt,
         onAbort = viewModel::abortAgent,
         onVerifyFileTool = viewModel::verifyFileTool,
@@ -135,8 +208,14 @@ private fun MobilePiScreen(
     onRetryHealth: () -> Unit,
     onClear: () -> Unit,
     onOpenTerminal: () -> Unit,
+    onSelectWorkspace: () -> Unit,
+    onPreviewSync: () -> Unit,
+    onApplySync: () -> Unit,
+    onSaveProfile: () -> Unit,
+    onClearProfile: () -> Unit,
     onStartAgent: () -> Unit,
     onStopAgent: () -> Unit,
+    onNewSession: () -> Unit,
     onSend: () -> Unit,
     onAbort: () -> Unit,
     onVerifyFileTool: () -> Unit,
@@ -174,12 +253,22 @@ private fun MobilePiScreen(
                     onOpenTerminal = onOpenTerminal,
                 )
                 HorizontalDivider()
+                WorkspaceSection(
+                    state = state,
+                    onSelectWorkspace = onSelectWorkspace,
+                    onPreviewSync = onPreviewSync,
+                    onApplySync = onApplySync,
+                )
+                HorizontalDivider()
                 ConfigurationSection(
                     state = state,
                     onProviderChange = onProviderChange,
                     onModelChange = onModelChange,
                     onApiKeyChange = onApiKeyChange,
-                    enabled = state.agentState in setOf(AgentState.STOPPED, AgentState.CRASHED),
+                    onSaveProfile = onSaveProfile,
+                    onClearProfile = onClearProfile,
+                    enabled = !state.agentStartInProgress &&
+                        state.agentState in setOf(AgentState.STOPPED, AgentState.CRASHED),
                 )
                 HorizontalDivider()
                 AgentSection(
@@ -187,6 +276,7 @@ private fun MobilePiScreen(
                     runtimeReady = runtimeStatus.state == RuntimeInstallState.READY,
                     onStart = onStartAgent,
                     onStop = onStopAgent,
+                    onNewSession = onNewSession,
                     onVerifyFileTool = onVerifyFileTool,
                 )
                 HorizontalDivider()
@@ -210,11 +300,139 @@ private fun AppHeader(status: RuntimeStatus) {
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text("Mobile Pi", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                Text("0.1.0 feasibility build", style = MaterialTheme.typography.labelMedium)
+                Text(
+                    "${BuildConfig.VERSION_NAME} managed workspace build",
+                    style = MaterialTheme.typography.labelMedium,
+                )
             }
             StatusPill(status.state.name.replace('_', ' '), runtimeColor(status.state))
         }
     }
+}
+
+@Composable
+private fun WorkspaceSection(
+    state: MobilePiUiState,
+    onSelectWorkspace: () -> Unit,
+    onPreviewSync: () -> Unit,
+    onApplySync: () -> Unit,
+) {
+    val agentStopped = state.agentState in setOf(AgentState.STOPPED, AgentState.CRASHED)
+    Section(title = "Workspace") {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    state.workspace?.displayName ?: "No directory selected",
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                state.workspace?.let {
+                    Text(
+                        if (state.workspacePermissionAvailable) {
+                            "Persisted directory access"
+                        } else {
+                            "Directory access unavailable"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (state.workspacePermissionAvailable) {
+                            Color(0xFF197344)
+                        } else {
+                            MaterialTheme.colorScheme.error
+                        },
+                    )
+                }
+            }
+            OutlinedButton(
+                onClick = onSelectWorkspace,
+                enabled = agentStopped && !state.workspaceOperationInProgress,
+            ) {
+                Icon(Icons.Default.FolderOpen, contentDescription = null)
+                Spacer(Modifier.size(6.dp))
+                Text(if (state.workspace == null) "Choose" else "Change")
+            }
+            if (state.workspace != null) {
+                Spacer(Modifier.size(8.dp))
+                IconButton(
+                    onClick = onPreviewSync,
+                    enabled = agentStopped &&
+                        state.workspacePermissionAvailable &&
+                        !state.workspaceOperationInProgress,
+                ) {
+                    Icon(Icons.Default.Sync, contentDescription = "Review workspace changes")
+                }
+            }
+        }
+
+        state.workspaceProgress?.let { progress ->
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.size(8.dp))
+                Text(
+                    buildString {
+                        append(progress.stage.name.replace('_', ' ').lowercase())
+                        append(": ")
+                        append(progress.completed)
+                        progress.total?.let { append("/$it") }
+                        progress.path?.let { append("  $it") }
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+        state.workspaceError?.let { error ->
+            Spacer(Modifier.height(8.dp))
+            Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+
+        state.syncPreview?.sync?.plan?.let { plan ->
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "${plan.operations.size} operation(s), ${plan.conflicts.size} conflict(s)",
+                style = MaterialTheme.typography.labelLarge,
+            )
+            plan.operations.take(MAX_SYNC_PREVIEW_ROWS).forEach { operation ->
+                Text(
+                    operationLabel(operation),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            plan.conflicts.take(MAX_SYNC_PREVIEW_ROWS).forEach { conflict ->
+                Text(
+                    "${conflict.path}: ${conflict.kind.name.replace('_', ' ').lowercase()}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            if (plan.conflicts.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Resolve the listed file conflicts, then review the workspace again.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            } else if (plan.operations.isNotEmpty() || plan.convergedPaths.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Button(onClick = onApplySync) {
+                    Text("Apply reviewed changes")
+                }
+            } else {
+                Spacer(Modifier.height(8.dp))
+                Text("Managed copy and selected directory are up to date.")
+            }
+        }
+    }
+}
+
+private fun operationLabel(operation: WorkspaceSyncOperation): String = when (operation) {
+    is WorkspaceSyncOperation.Copy ->
+        "${operation.path}: ${operation.source.name.lowercase()} -> " +
+            "${operation.target.name.lowercase()} (${operation.kind.name.lowercase()})"
+    is WorkspaceSyncOperation.Delete ->
+        "${operation.path}: delete from ${operation.target.name.lowercase()}"
 }
 
 @Composable
@@ -287,6 +505,8 @@ private fun ConfigurationSection(
     onProviderChange: (String) -> Unit,
     onModelChange: (String) -> Unit,
     onApiKeyChange: (String) -> Unit,
+    onSaveProfile: () -> Unit,
+    onClearProfile: () -> Unit,
     enabled: Boolean,
 ) {
     Section(title = "Model") {
@@ -317,6 +537,35 @@ private fun ConfigurationSection(
             visualTransformation = PasswordVisualTransformation(),
             enabled = enabled,
         )
+        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(
+                onClick = onSaveProfile,
+                enabled = enabled &&
+                    state.provider.isNotBlank() &&
+                    state.model.isNotBlank() &&
+                    state.apiKey.isNotBlank(),
+            ) {
+                Icon(Icons.Default.Save, contentDescription = null)
+                Spacer(Modifier.size(6.dp))
+                Text("Save profile")
+            }
+            if (state.profileSaved) {
+                Spacer(Modifier.size(10.dp))
+                Text(
+                    "Saved with Android Keystore",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF197344),
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = onClearProfile, enabled = enabled && state.profileSaved) {
+                Icon(Icons.Default.DeleteOutline, contentDescription = "Delete saved profile")
+            }
+        }
+        state.profileError?.let { error ->
+            Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
     }
 }
 
@@ -326,10 +575,13 @@ private fun AgentSection(
     runtimeReady: Boolean,
     onStart: () -> Unit,
     onStop: () -> Unit,
+    onNewSession: () -> Unit,
     onVerifyFileTool: () -> Unit,
 ) {
     val configComplete = state.provider.isNotBlank() && state.model.isNotBlank() && state.apiKey.isNotBlank()
     val canStart = runtimeReady && configComplete &&
+        state.workspace != null && state.workspacePermissionAvailable &&
+        !state.agentStartInProgress &&
         state.agentState in setOf(AgentState.STOPPED, AgentState.CRASHED)
     val canStop = state.agentState in setOf(
         AgentState.STARTING,
@@ -352,6 +604,14 @@ private fun AgentSection(
             }
         }
         Spacer(Modifier.height(10.dp))
+        if (state.agentState == AgentState.READY) {
+            OutlinedButton(onClick = onNewSession) {
+                Icon(Icons.Default.Add, contentDescription = null)
+                Spacer(Modifier.size(6.dp))
+                Text("New Session")
+            }
+            Spacer(Modifier.height(10.dp))
+        }
         OutlinedButton(
             onClick = onVerifyFileTool,
             enabled = state.agentState == AgentState.READY,
@@ -373,6 +633,30 @@ private fun AgentSection(
                 Text(
                     text = if (result.success) "proof.txt matched the nonce" else "proof.txt verification failed",
                     style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+        state.recoveryNotice?.let { notice ->
+            Spacer(Modifier.height(8.dp))
+            Text(notice, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
+        if (state.sessionId != null) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                state.sessionName ?: "Session ${state.sessionId.take(8)}",
+                style = MaterialTheme.typography.labelLarge,
+            )
+            val statistics = state.sessionStatistics
+            val usage = buildList {
+                statistics.totalTokens?.let { add("$it tokens") }
+                statistics.costUsd?.let { add("USD ${"%.4f".format(it)}") }
+                statistics.contextPercent?.let { add("${"%.1f".format(it)}% context") }
+            }.joinToString("  |  ")
+            if (usage.isNotBlank()) {
+                Text(
+                    usage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -401,7 +685,7 @@ private fun ConversationSection(state: MobilePiUiState) {
                     )
                 }
                 state.tools.forEach { tool ->
-                    ToolRow(tool.name, tool.status)
+                    ToolRow(tool.name, tool.status, tool.output)
                 }
             }
         }
@@ -423,7 +707,11 @@ private fun MessageRow(role: MessageRole, text: String, streaming: Boolean) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = color)
         if (text.isNotEmpty()) {
-            Text(text, style = MaterialTheme.typography.bodyMedium, color = color)
+            if (role == MessageRole.ASSISTANT) {
+                BasicMarkdown(text)
+            } else {
+                Text(text, style = MaterialTheme.typography.bodyMedium, color = color)
+            }
         } else if (streaming) {
             CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
         }
@@ -431,21 +719,34 @@ private fun MessageRow(role: MessageRole, text: String, streaming: Boolean) {
 }
 
 @Composable
-private fun ToolRow(name: String, status: ToolStatus) {
+private fun ToolRow(name: String, status: ToolStatus, output: String?) {
     val (label, color) = when (status) {
         ToolStatus.RUNNING -> "Running" to Color(0xFF1769AA)
         ToolStatus.SUCCEEDED -> "Succeeded" to Color(0xFF197344)
         ToolStatus.FAILED -> "Failed" to MaterialTheme.colorScheme.error
     }
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(6.dp))
             .padding(horizontal = 10.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        Text(label, color = color, style = MaterialTheme.typography.labelMedium)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Text(label, color = color, style = MaterialTheme.typography.labelMedium)
+        }
+        output?.takeIf(String::isNotBlank)?.let { value ->
+            Spacer(Modifier.height(7.dp))
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest, RoundedCornerShape(4.dp))
+                    .padding(8.dp),
+            )
+        }
     }
 }
 
@@ -552,3 +853,5 @@ private fun agentColor(state: AgentState): Color = when (state) {
     AgentState.CRASHED -> MaterialTheme.colorScheme.error
     else -> MaterialTheme.colorScheme.onSurfaceVariant
 }
+
+private const val MAX_SYNC_PREVIEW_ROWS = 8

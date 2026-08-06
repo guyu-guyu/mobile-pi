@@ -46,7 +46,7 @@ jobs:
         shell: bash
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon --stacktrace :runtime:pi:testDebugUnitTest :app:assembleDebug
+          ./gradlew --no-daemon --stacktrace :feature:workspaces:testDebugUnitTest :runtime:pi:testDebugUnitTest :runtime:terminal-core:testDebugUnitTest :app:lintDebug :runtime:pi:lintDebug :feature:workspaces:lintDebug :app:assembleDebug
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v7

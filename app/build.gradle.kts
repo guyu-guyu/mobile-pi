@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 val releaseVersionCode = providers.gradleProperty("releaseVersionCode").orNull?.let { value ->
@@ -34,7 +35,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = releaseVersionCode ?: 1
-        versionName = releaseVersionName ?: "0.1.0"
+        versionName = releaseVersionName ?: "0.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
@@ -93,6 +94,7 @@ kotlin {
 }
 
 dependencies {
+    implementation(project(":feature:workspaces"))
     implementation(project(":runtime:pi"))
     implementation(project(":runtime:terminal-core"))
     implementation(libs.androidx.core.ktx)
@@ -105,4 +107,7 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons.extended)
+    implementation(libs.coroutines.android)
+    implementation(libs.kotlinx.serialization)
+    testImplementation(libs.junit)
 }

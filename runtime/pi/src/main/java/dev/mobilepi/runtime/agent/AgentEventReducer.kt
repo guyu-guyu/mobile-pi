@@ -14,7 +14,6 @@ internal object AgentEventReducer {
                 proofResult = null,
             )
             PiRpcMessage.Event.AgentEnd -> snapshot.copy(
-                state = AgentState.READY,
                 messages = snapshot.messages.map { message ->
                     if (message.role == MessageRole.ASSISTANT && message.streaming) {
                         message.copy(streaming = false)
@@ -23,17 +22,25 @@ internal object AgentEventReducer {
                     }
                 },
             )
+            PiRpcMessage.Event.AgentSettled -> snapshot.copy(state = AgentState.READY)
             is PiRpcMessage.Event.TextDelta -> appendAssistantText(snapshot, event.text, nextMessageId)
             is PiRpcMessage.Event.MessageEnd -> finishAssistant(snapshot, event, nextMessageId)
             is PiRpcMessage.Event.ToolStart -> snapshot.copy(
                 tools = snapshot.tools.filterNot { it.callId == event.callId } +
                     ToolExecution(event.callId, event.name, ToolStatus.RUNNING),
             )
-            is PiRpcMessage.Event.ToolUpdate -> snapshot
+            is PiRpcMessage.Event.ToolUpdate -> snapshot.copy(
+                tools = snapshot.tools.map { tool ->
+                    if (tool.callId == event.callId) tool.copy(output = event.output) else tool
+                },
+            )
             is PiRpcMessage.Event.ToolEnd -> snapshot.copy(
                 tools = snapshot.tools.map { tool ->
                     if (tool.callId == event.callId) {
-                        tool.copy(status = if (event.isError) ToolStatus.FAILED else ToolStatus.SUCCEEDED)
+                        tool.copy(
+                            status = if (event.isError) ToolStatus.FAILED else ToolStatus.SUCCEEDED,
+                            output = event.output ?: tool.output,
+                        )
                     } else {
                         tool
                     }

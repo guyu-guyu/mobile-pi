@@ -2,6 +2,7 @@ package dev.mobilepi.runtime.rpc
 
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
@@ -19,11 +20,21 @@ sealed interface PiRpcMessage {
     sealed interface Event : PiRpcMessage {
         data object AgentStart : Event
         data object AgentEnd : Event
+        data object AgentSettled : Event
         data class TextDelta(val text: String) : Event
         data class MessageEnd(val message: JsonElement?) : Event
         data class ToolStart(val callId: String, val name: String) : Event
-        data class ToolUpdate(val callId: String, val name: String) : Event
-        data class ToolEnd(val callId: String, val name: String, val isError: Boolean) : Event
+        data class ToolUpdate(
+            val callId: String,
+            val name: String,
+            val output: String? = null,
+        ) : Event
+        data class ToolEnd(
+            val callId: String,
+            val name: String,
+            val isError: Boolean,
+            val output: String? = null,
+        ) : Event
         data class ExtensionError(val message: String) : Event
         data class Unsupported(val type: String, val payload: JsonObject) : Event
     }
@@ -46,6 +57,7 @@ object PiRpcProtocol {
         return when (type) {
             "agent_start" -> PiRpcMessage.Event.AgentStart
             "agent_end" -> PiRpcMessage.Event.AgentEnd
+            "agent_settled" -> PiRpcMessage.Event.AgentSettled
             "message_update" -> decodeMessageUpdate(value)
             "message_end" -> PiRpcMessage.Event.MessageEnd(value["message"])
             "tool_execution_start" -> PiRpcMessage.Event.ToolStart(
@@ -55,11 +67,13 @@ object PiRpcProtocol {
             "tool_execution_update" -> PiRpcMessage.Event.ToolUpdate(
                 callId = value.requiredString("toolCallId"),
                 name = value.requiredString("toolName"),
+                output = toolText(value["partialResult"]),
             )
             "tool_execution_end" -> PiRpcMessage.Event.ToolEnd(
                 callId = value.requiredString("toolCallId"),
                 name = value.requiredString("toolName"),
                 isError = value["isError"]?.jsonPrimitive?.booleanOrNull ?: false,
+                output = toolText(value["result"]),
             )
             "extension_error" -> PiRpcMessage.Event.ExtensionError(
                 value.string("error") ?: value.string("message") ?: "Extension error",
@@ -85,9 +99,20 @@ object PiRpcProtocol {
             ?: element.toString()
     }
 
+    private fun toolText(element: JsonElement?): String? {
+        val content = runCatching { element?.jsonObject?.get("content") as? JsonArray }.getOrNull()
+            ?: return null
+        return content.mapNotNull { part ->
+            val value = runCatching { part.jsonObject }.getOrNull() ?: return@mapNotNull null
+            if (value.string("type") == "text") value.string("text") else null
+        }.joinToString("\n").take(MAX_TOOL_OUTPUT_CHARS).takeIf(String::isNotBlank)
+    }
+
     private fun JsonObject.string(name: String): String? =
         this[name]?.jsonPrimitive?.contentOrNull
 
     private fun JsonObject.requiredString(name: String): String =
         string(name) ?: throw PiRpcProtocolException("RPC message has no $name")
+
+    private const val MAX_TOOL_OUTPUT_CHARS = 20_000
 }

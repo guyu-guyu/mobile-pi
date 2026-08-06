@@ -13,6 +13,7 @@ data class RuntimePaths(
     val temporary: File,
     val pi: File,
     val workspace: File,
+    val sessions: File,
 ) {
     companion object {
         fun from(context: Context): RuntimePaths {
@@ -28,6 +29,7 @@ data class RuntimePaths(
                 temporary = File(files, "tmp"),
                 pi = File(files, "pi"),
                 workspace = File(files, "workspaces/poc/files"),
+                sessions = File(files, "sessions"),
             )
         }
     }
@@ -42,6 +44,7 @@ data class RuntimePaths(
     fun prepareSharedDirectories() {
         pi.resolve("config").mkdirsOrThrow()
         workspace.mkdirsOrThrow()
+        sessions.mkdirsOrThrow()
     }
 
     fun requireInstalled() {

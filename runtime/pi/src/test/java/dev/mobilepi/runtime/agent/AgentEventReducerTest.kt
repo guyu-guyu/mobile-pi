@@ -16,6 +16,8 @@ class AgentEventReducerTest {
         snapshot = AgentEventReducer.reduce(snapshot, PiRpcMessage.Event.TextDelta("hello "), nextId)
         snapshot = AgentEventReducer.reduce(snapshot, PiRpcMessage.Event.TextDelta("world"), nextId)
         snapshot = AgentEventReducer.reduce(snapshot, PiRpcMessage.Event.AgentEnd, nextId)
+        assertEquals(AgentState.RUNNING, snapshot.state)
+        snapshot = AgentEventReducer.reduce(snapshot, PiRpcMessage.Event.AgentSettled, nextId)
 
         assertEquals(AgentState.READY, snapshot.state)
         assertEquals("hello world", snapshot.messages.single().text)

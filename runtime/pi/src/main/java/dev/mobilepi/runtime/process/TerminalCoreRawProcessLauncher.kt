@@ -5,6 +5,7 @@ import com.ai.assistance.operit.terminal.TerminalManager
 import java.io.File
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.UUID
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -24,6 +25,10 @@ class TerminalCoreRawProcessLauncher(context: Context) : RawProcessLauncher {
         }
         paths.preparePrivateDirectories()
         paths.requireInstalled()
+        val sessionDirectory = File(spec.sessionDirectory).canonicalFile
+        check(sessionDirectory.isDirectory || sessionDirectory.mkdirs()) {
+            "Cannot create private Session directory"
+        }
 
         val command = buildList {
             add(paths.proot.absolutePath)
@@ -45,6 +50,8 @@ class TerminalCoreRawProcessLauncher(context: Context) : RawProcessLauncher {
             add("${File(spec.workingDirectory).canonicalPath}:$GUEST_WORKSPACE")
             add("-b")
             add("${paths.pi.canonicalPath}:$GUEST_PI_HOME")
+            add("-b")
+            add("${sessionDirectory.absolutePath}:$GUEST_SESSIONS")
             add("-w")
             add(GUEST_WORKSPACE)
             addAll(spec.command)
@@ -69,9 +76,24 @@ class TerminalCoreRawProcessLauncher(context: Context) : RawProcessLauncher {
     private fun validateSpec(spec: RawProcessSpec) {
         check(spec.command.isNotEmpty()) { "Raw process command cannot be empty" }
         val requestedWorkspace = File(spec.workingDirectory).canonicalFile
-        val allowedWorkspace = paths.workspace.canonicalFile
-        check(requestedWorkspace == allowedWorkspace) {
-            "Phase 0.1 only permits the private proof-of-concept workspace"
+        val workspacesRoot = File(paths.files, "workspaces").canonicalFile
+        val workspaceId = requestedWorkspace.parentFile?.name
+        check(
+            requestedWorkspace.toPath().startsWith(workspacesRoot.toPath()) &&
+                requestedWorkspace.name == "files" &&
+                requestedWorkspace.parentFile?.parentFile == workspacesRoot &&
+                workspaceId != null &&
+                runCatching { UUID.fromString(workspaceId).toString() == workspaceId }.getOrDefault(false),
+        ) {
+            "Agent working directory must be a managed private workspace"
+        }
+        val requestedSessions = File(spec.sessionDirectory).canonicalFile
+        check(
+            requestedSessions.toPath().startsWith(paths.sessions.canonicalFile.toPath()) &&
+                requestedSessions.parentFile == paths.sessions.canonicalFile &&
+                requestedSessions.name == workspaceId,
+        ) {
+            "Agent Session directory must match the managed workspace"
         }
         check(spec.environment.keys.none { it.contains('=') || it.contains('\u0000') }) {
             "Invalid environment variable name"
@@ -99,6 +121,7 @@ class TerminalCoreRawProcessLauncher(context: Context) : RawProcessLauncher {
     companion object {
         const val GUEST_WORKSPACE = "/workspace"
         const val GUEST_PI_HOME = "/mobile-pi/pi"
+        const val GUEST_SESSIONS = "/mobile-pi/sessions"
     }
 }
 

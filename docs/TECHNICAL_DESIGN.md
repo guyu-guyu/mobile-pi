@@ -208,7 +208,7 @@ npm install -g @earendil-works/pi-coding-agent@0.81.1
 
 Android `Context.filesDir` 是 Mobile Pi 运行数据的宿主根目录。主用户中通常为 `/data/user/0/dev.mobilepi/files`，`/data/data/dev.mobilepi/files` 是等价入口；非主用户的数字部分随 Android user ID 变化，代码必须始终从 `Context.filesDir` 获取，不能硬编码绝对路径。
 
-当前 PoC 的宿主目录与 guest 视图如下：
+`0.1.0` PoC 的宿主目录与 guest 视图如下：
 
 | 用途 | Android 宿主路径（相对 `filesDir`） | PRoot guest 路径 | 生命周期 |
 |---|---|---|---|
@@ -223,7 +223,7 @@ PRoot 将 rootfs 作为 guest `/`，再把宿主工作区和 Pi 共享目录覆�
 
 rootfs 内会创建实体目录 `/workspace` 和 `/mobile-pi/pi` 作为挂载目标。它们不拥有工作数据，也不是历史遗留目录：挂载生效时，访问分别转发到 `filesDir/workspaces/poc/files` 和 `filesDir/pi`；底层实体目录被覆盖。不得把这些挂载目标纳入缓存清理或迁移删除清单，必需挂载失败时 terminal 和 Agent 必须启动失败，不能继续使用未挂载的底层目录。
 
-诊断 terminal 与非 PTY Pi Agent 必须使用相同的工作区源目录、guest 目标和 Pi 全局配置源目录。可以通过以下命令在 terminal 中核对内容，但运行逻辑不能依赖 `/data/user/0` 这一特定 user ID：
+`0.1.0` 的诊断 terminal 与非 PTY Pi Agent 使用相同 PoC 工作区。`0.2.0` Agent 改为动态托管工作区后，Debug 诊断 terminal 仍保持受限 PoC 挂载，不能用于检查当前托管工作区；运行逻辑不能依赖 `/data/user/0` 这一特定 user ID：
 
 ```bash
 ls -la /workspace
@@ -232,7 +232,7 @@ ls -la /mobile-pi/pi/config
 ls -la /data/data/dev.mobilepi/files/pi/config
 ```
 
-后续多工作区版本继续保留固定 guest `/workspace`，但每个 Agent 的独立 PRoot 进程把它映射到各自的 `workspaces/<workspace-id>/files`；`/mobile-pi/pi` 仍指向同一个应用级宿主目录。多会话细节见 7.3 节。
+`0.2.0` 保留固定 guest `/workspace`，把当前 Agent 的独立 PRoot 进程映射到 `workspaces/<workspace-id>/files`；对应的 `sessions/<workspace-id>` 映射到 `/mobile-pi/sessions`。`/mobile-pi/pi` 仍指向同一个应用级宿主目录。多会话细节见 7.3 节。
 
 ### 6.4 安装状态机
 
@@ -426,15 +426,17 @@ RPC event 本身没有请求 ID，不能错误地与最近一个命令绑定；�
 │   └── logs/
 ├── pi/
 │   ├── config/                  # PI_CODING_AGENT_DIR
-│   ├── sessions/
 │   └── packages/
+├── sessions/
+│   └── <workspace-id>/          # Pi JSONL Session 文件
 └── workspaces/
+    ├── active-workspace.json    # 当前单工作区索引
     └── <workspace-id>/
         ├── files/               # Pi 实际工作目录
-        └── sync-manifest.json   # 托管工作区后续使用
+        └── sync-manifest.json   # 版本化三方同步基线
 ```
 
-凭据不写入 rootfs 或 Pi 配置目录；这些目录可能被 Pi extension 读取，也可能进入用户导出的诊断包。
+加密后的 provider profile 位于 `Context.noBackupFilesDir/credentials/provider-profile.json`，不属于上述运行数据树。凭据不写入 rootfs 或 Pi 配置目录；这些目录可能被 Pi extension 读取，也可能进入用户导出的诊断包。
 
 ### 8.2 Android 文件访问的关键约束
 
@@ -455,11 +457,11 @@ SAF 提供 `content://` URI 和 `ContentResolver`，不是普通 POSIX 路径，
 
 1. 用户通过 `ACTION_OPEN_DOCUMENT_TREE` 选择目录并保存持久 URI grant。
 2. 应用复制文档树至私有 `workspaces/<id>/files`。
-3. 导入时记录相对路径、document ID、大小、修改时间和按需 hash。
+3. 导入时记录安全相对路径、实际字节数和完整 SHA-256；不依赖 provider 修改时间。
 4. Pi 只操作私有副本。
 5. Agent 完成后，应用计算新增、修改和删除清单。
 6. 用户确认后才写回；目标文件在外部发生变化时标记冲突，不静默覆盖。
-7. SAF provider 不支持原子替换时，采用备份和 best-effort 写入，并明确显示部分失败。
+7. SAF provider 不支持原子替换时执行 best-effort 写入；部分失败报告已完成操作数且不推进同步基线。
 
 初版只允许一个活动工作区，不实现实时双向 watcher。同步期间禁止 Agent 写入，避免生成不一致快照。
 
@@ -484,7 +486,7 @@ SAF 提供 `content://` URI 和 `ContentResolver`，不是普通 POSIX 路径，
 - 启动/停止 Agent 控件。
 - 简单消息列表、文本输入和发送/中止按钮。
 - 折叠式诊断区域，显示阶段、退出码和脱敏 stderr。
-- Debug 构建在 runtime READY 后显示本地 Ubuntu 终端入口，复用 TerminalCore PTY，不作为 Release 功能；终端固定使用与非 PTY Agent 相同的 PRoot 模式，共享 `/workspace` 和 `PI_CODING_AGENT_DIR=/mobile-pi/pi/config`。这两个宿主注入挂载属于启动必需条件，挂载失败时终端必须报错退出，不能静默回退到 rootfs 内的同名目录。
+- Debug 构建在 runtime READY 后显示本地 Ubuntu 终端入口，复用 TerminalCore PTY，不作为 Release 功能；`0.2.0` 继续使用受限 PoC 挂载，不能继承或检查当前 Agent 的动态托管工作区。
 
 不实现首页宣传内容、会话侧栏、文件浏览器、Markdown 高级渲染或产品级终端。
 
@@ -509,7 +511,7 @@ SAF 提供 `content://` URI 和 `ContentResolver`，不是普通 POSIX 路径，
 ### 10.2 控制措施
 
 - 默认使用托管工作区和最小 SAF grant，不申请全文件权限。
-- `0.1.0` 禁用所有 extension、skill、prompt template 和项目上下文发现。
+- `0.1.0` 和 `0.2.0` 禁用所有 extension、skill、prompt template 和项目上下文发现。
 - `0.3.0` 启用资源前显示来源、版本、可执行代码风险和项目信任状态。
 - 凭据使用 Android Keystore 包装加密；密文存 DataStore/数据库，明文只在需要时进入进程环境。
 - 日志统一脱敏 API key、Authorization header、用户输入和可能包含凭据的命令。

@@ -124,14 +124,14 @@ jobs:
           MOBILE_PI_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon --stacktrace :runtime:pi:testDebugUnitTest :app:assembleRelease -PreleaseVersionName="${{ steps.version.outputs.version_name }}" -PreleaseVersionCode="${{ steps.version.outputs.version_code }}"
+          ./gradlew --no-daemon --stacktrace :feature:workspaces:testDebugUnitTest :runtime:pi:testDebugUnitTest :runtime:terminal-core:testDebugUnitTest :app:assembleRelease -PreleaseVersionName="${{ steps.version.outputs.version_name }}" -PreleaseVersionCode="${{ steps.version.outputs.version_code }}"
 
       - name: Test and assemble debug-signed test APK
         if: steps.signing.outputs.signed != 'true'
         shell: bash
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon --stacktrace :runtime:pi:testDebugUnitTest :app:assembleDebug -PreleaseVersionName="${{ steps.version.outputs.version_name }}" -PreleaseVersionCode="${{ steps.version.outputs.version_code }}"
+          ./gradlew --no-daemon --stacktrace :feature:workspaces:testDebugUnitTest :runtime:pi:testDebugUnitTest :runtime:terminal-core:testDebugUnitTest :app:assembleDebug -PreleaseVersionName="${{ steps.version.outputs.version_name }}" -PreleaseVersionCode="${{ steps.version.outputs.version_code }}"
 
       - name: Verify and package APK
         id: package

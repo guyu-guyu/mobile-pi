@@ -11,6 +11,7 @@ import dev.mobilepi.runtime.rpc.PiRpcClient
 import dev.mobilepi.runtime.rpc.PiRpcMessage
 import dev.mobilepi.runtime.rpc.RpcDiagnostic
 import java.nio.charset.StandardCharsets
+import java.io.File
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
@@ -56,6 +57,7 @@ class PiAgentController(
     private var diagnosticJob: Job? = null
     private var exitJob: Job? = null
     private var settled = CompletableDeferred<Unit>()
+    private var workspaceDirectory: File? = null
 
     suspend fun start(config: PiAgentConfig) = lifecycleMutex.withLock {
         check(_snapshot.value.state in setOf(AgentState.STOPPED, AgentState.CRASHED)) {
@@ -75,9 +77,24 @@ class PiAgentController(
             client = rpcClient
             attach(rpcClient, rawProcess, instanceId)
             rpcClient.start()
-            rpcClient.getState()
+            val restored = PiSessionParser.restore(
+                state = rpcClient.getState(),
+                messages = rpcClient.getMessages(),
+                statistics = runCatching { rpcClient.getSessionStats() }.getOrNull(),
+            )
             if (instanceIds.get() == instanceId && _snapshot.value.state == AgentState.STARTING) {
-                _snapshot.update { it.copy(state = AgentState.READY) }
+                workspaceDirectory = File(config.workspaceDirectory)
+                _snapshot.update {
+                    it.copy(
+                        state = AgentState.READY,
+                        messages = restored.messages.map { (role, text) ->
+                            AgentMessage(nextMessageId(), role, text)
+                        },
+                        sessionId = restored.sessionId,
+                        sessionName = restored.sessionName,
+                        sessionStatistics = restored.statistics,
+                    )
+                }
             }
         } catch (error: Throwable) {
             cleanupFailedStart()
@@ -139,6 +156,28 @@ class PiAgentController(
         }
     }
 
+    suspend fun newSession() {
+        check(_snapshot.value.state == AgentState.READY) { "Agent is not ready" }
+        val rpcClient = requireClient()
+        rpcClient.newSession()
+        val restored = PiSessionParser.restore(
+            state = rpcClient.getState(),
+            messages = rpcClient.getMessages(),
+            statistics = runCatching { rpcClient.getSessionStats() }.getOrNull(),
+        )
+        _snapshot.update {
+            it.copy(
+                messages = emptyList(),
+                tools = emptyList(),
+                error = null,
+                proofResult = null,
+                sessionId = restored.sessionId,
+                sessionName = restored.sessionName,
+                sessionStatistics = restored.statistics,
+            )
+        }
+    }
+
     suspend fun stop() = lifecycleMutex.withLock {
         val rpcClient = client
         if (rpcClient == null) {
@@ -165,7 +204,9 @@ class PiAgentController(
     suspend fun verifyFileTool(): ProofResult {
         check(_snapshot.value.state == AgentState.READY) { "Agent is not ready" }
         val nonce = UUID.randomUUID().toString()
-        val proofFile = paths.workspace.resolve(PROOF_FILE_NAME)
+        val proofFile = checkNotNull(workspaceDirectory) {
+            "Agent has no managed workspace"
+        }.resolve(PROOF_FILE_NAME)
         withContext(Dispatchers.IO) { proofFile.delete() }
         prompt(
             "Use the write tool to create $PROOF_FILE_NAME in the current workspace. " +
@@ -195,7 +236,10 @@ class PiAgentController(
             rpcClient.events.collect { event ->
                 if (instanceIds.get() != instanceId) return@collect
                 _snapshot.update { AgentEventReducer.reduce(it, event, ::nextMessageId) }
-                if (event is PiRpcMessage.Event.AgentEnd) settled.complete(Unit)
+                if (event is PiRpcMessage.Event.AgentSettled) {
+                    settled.complete(Unit)
+                    scope.launch { refreshStatistics(rpcClient, instanceId) }
+                }
             }
         }
         diagnosticJob = scope.launch {
@@ -245,6 +289,14 @@ class PiAgentController(
     }
 
     private fun requireClient(): PiRpcClient = checkNotNull(client) { "Agent process is not running" }
+
+    private suspend fun refreshStatistics(rpcClient: PiRpcClient, instanceId: Long) {
+        val statistics = runCatching { rpcClient.getSessionStats() }.getOrNull() ?: return
+        if (instanceIds.get() != instanceId) return
+        _snapshot.update {
+            it.copy(sessionStatistics = PiSessionParser.parseStatistics(statistics))
+        }
+    }
 
     private fun addError(message: String) {
         _snapshot.update { AgentEventReducer.addError(it, message, ::nextMessageId) }

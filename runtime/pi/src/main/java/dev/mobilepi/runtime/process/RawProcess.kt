@@ -8,6 +8,7 @@ data class RawProcessSpec(
     val command: List<String>,
     val environment: Map<String, String>,
     val workingDirectory: String,
+    val sessionDirectory: String,
 )
 
 data class ProcessExit(
